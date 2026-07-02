@@ -1,0 +1,20 @@
+# luarocks
+/.rocks/
+/.luarocks/
+/luarocks/
+
+# test coverage
+/luacov.stats.out
+/luacov.report.out
+
+# neovim
+.nvimlog
+
+# lua
+*.luac
+
+# editor / os
+.DS_Store
+*.swp
+*.swo
+*~

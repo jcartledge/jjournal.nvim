@@ -1,0 +1,13 @@
+statsfile = "luacov.stats.out"
+reportfile = "luacov.report.out"
+runreport = true
+
+include = {
+	"lua/jjournal/",
+}
+
+exclude = {
+	"vim",
+	"tests/",
+	"%.rocks",
+}
