@@ -19,11 +19,12 @@ dependencies = {
 test_dependencies = {
 	"busted >= 2.2.0",
 	"luacov >= 0.15.0",
-	"luafilesystem",
+	"luacov-reporter-lcov >= 0.2.0", -- Adds the lcov exporter
+	"luafilesystem >= 1.9.0",
 }
 test = {
 	type = "command",
-	command = "nvim --headless -l tests/run.lua",
+	command = "./tests/scripts/run.sh",
 }
 build = {
 	type = "builtin",

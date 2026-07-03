@@ -1,4 +1,5 @@
 local jjournal = require("jjournal")
+local assert = require("luassert")
 local stub = require("luassert.stub")
 
 local function setup_test(mocks)
