@@ -50,3 +50,14 @@ All mocking goes through `setup_test` in `tests/support/setup_test.lua`. Tests s
 Avoid undeclared globals in spec files. Busted normally injects `describe`/`it` as implicit globals via `setfenv`, but that only works because `.luarc.json` tells lua_ls to treat them as known globals — masking any *other* accidental undeclared global. Instead, require them explicitly at the top of the spec file: `local describe, it = require("busted").describe, require("busted").it` (this works because `require("busted")` returns the same already-initialized module the runner uses internally). `vim` is the only global we declare in `.luarc.json`, since it's a genuine Neovim runtime global with no require path.
 
 Avoid busted's test lifecycle functions (`before_each`, `after_each`, `setup`, `teardown`). They spread state-setup logic across a file, away from the test that depends on it, and make a single test hard to read in isolation. Prefer explicit setup/cleanup called directly inside each `it`, using shared, reusable helpers (like `setup_test`) rather than framework hooks.
+
+## Before committing
+
+Work through this checklist before committing. If a check surfaces a gap, stop, fix it, and wait for confirmation before committing — don't fold an unreviewed fix into the commit silently.
+
+* **Tests pass.** Run `./tests/scripts/run.sh` and confirm all specs pass.
+* **Interface fully exercised, not just lines executed.** Review the diff against the full interface being exercised (see "Testing" above): every new/changed branch, default value, and wiring point should have a spec pinning it down, not just enough to hit each line once. If something's missing, add the spec before committing.
+* **Docs are current.** Check whether `README.md`, `doc/jjournal.txt`, and this file still accurately describe the change. Update whichever are now stale.
+* **Backlog still makes sense.** Check whether this change makes any `spec/backlog`, `spec/todo`, or `spec/doing` story redundant, already done, or in need of rewording. Update or remove it.
+* **Nothing stray is staged.** Check `git status`/`git diff --cached` for accidentally-included generated files (`doc/tags`, `luacov.*.out`, etc.) or unrelated changes.
+* **Story location matches reality.** At most one story should be in `spec/doing/`, and it should move to `spec/done/` once the work is actually complete.
