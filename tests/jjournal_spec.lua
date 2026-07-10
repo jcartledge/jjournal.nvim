@@ -17,6 +17,7 @@ describe("jjournal config", function()
 	it("normalizes a configured path that has no trailing slash", function()
 		local cleanup = setup_test({
 			config = { path = "/virtual/test/no-trailing-slash" },
+			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		})
 
@@ -154,8 +155,18 @@ describe("jjournal.prompt_for_date", function()
 end)
 
 describe("jjournal.open_date", function()
+	-- Most specs here just need the parent directory to already exist, so the
+	-- mkdir check added for directory auto-creation is a no-op; override
+	-- individual fields (e.g. fn.isdirectory) to exercise other paths.
+	local function setup_open_date_test(overrides)
+		return setup_test(vim.tbl_deep_extend("force", {
+			fn = { isdirectory = 1 },
+			vim = { cmd = true },
+		}, overrides or {}))
+	end
+
 	it("opens the resolved date with the given command", function()
-		local cleanup = setup_test({ vim = { cmd = true } })
+		local cleanup = setup_open_date_test()
 
 		jjournal.open_date("2026-07-09", "vsplit")
 
@@ -165,7 +176,7 @@ describe("jjournal.open_date", function()
 	end)
 
 	it("defaults to 'edit' when no command is given", function()
-		local cleanup = setup_test({ vim = { cmd = true } })
+		local cleanup = setup_open_date_test()
 
 		jjournal.open_date("2026-07-09")
 
@@ -175,13 +186,50 @@ describe("jjournal.open_date", function()
 	end)
 
 	it("warns and does not open anything when date_str is nil", function()
-		local cleanup = setup_test({ vim = { notify = true, cmd = true } })
+		local cleanup = setup_open_date_test({ vim = { notify = true } })
 
 		jjournal.open_date(nil)
 
 		assert.stub(vim.notify).was_called(1)
 		assert.are.equal(vim.log.levels.WARN, vim.notify.calls[1].vals[2])
 		assert.stub(vim.cmd).was_not_called()
+
+		cleanup()
+	end)
+
+	it("creates the parent directory before opening, when it doesn't exist yet", function()
+		local calls = {}
+		local cleanup = setup_open_date_test({
+			fn = {
+				isdirectory = 0,
+				mkdir = function(dir, flags)
+					table.insert(calls, { "mkdir", dir, flags })
+				end,
+			},
+			vim = {
+				cmd = function(command)
+					table.insert(calls, { "cmd", command })
+				end,
+			},
+		})
+
+		jjournal.open_date("2026-07-09", "edit")
+
+		assert.are.same({
+			{ "mkdir", "/virtual/test/journal/path", "p" },
+			{ "cmd", "edit /virtual/test/journal/path/2026-07-09.md" },
+		}, calls)
+
+		cleanup()
+	end)
+
+	it("does not create the parent directory when it already exists", function()
+		local cleanup = setup_open_date_test({ fn = { mkdir = true } })
+
+		jjournal.open_date("2026-07-09", "edit")
+
+		assert.stub(vim.fn.mkdir).was_not_called()
+		assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
 
 		cleanup()
 	end)
@@ -335,7 +383,7 @@ describe("jjournal.execute", function()
 
 	it("resolves and opens a date for non-search targets", function()
 		local cleanup = setup_test({
-			fn = { strftime = "2026-07-10" },
+			fn = { strftime = "2026-07-10", isdirectory = 1 },
 			vim = { cmd = true },
 		})
 
@@ -349,6 +397,7 @@ describe("jjournal.execute", function()
 	it("prompts for a date and opens it in a vsplit for the 'prompt' target", function()
 		local cleanup = setup_test({
 			ui = { input = function(_, callback) callback("2026-07-09") end },
+			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		})
 

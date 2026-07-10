@@ -129,6 +129,9 @@ M.open_date = function(date_str, cmd)
   end
 
   local full_path = get_path() .. date_str .. ".md"
+  local dir = vim.fn.fnamemodify(full_path, ":h")
+  if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
+
   vim.cmd(string.format("%s %s", cmd or "edit", full_path))
 end
 
