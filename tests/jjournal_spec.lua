@@ -2,27 +2,52 @@ local jjournal = require("jjournal")
 local assert = require("luassert")
 local stub = require("luassert.stub")
 
+-- Configures jjournal against a virtual journal path, installs any requested
+-- stubs, then calls jjournal.setup() and returns a cleanup function that
+-- reverts them. Mocks are installed *before* setup() runs, so they also
+-- observe setup()'s own side effects (keymap binding, autocmd registration).
+--
+-- This is the only place in this file that creates stubs: tests should
+-- describe *what* to mock via `mocks`, not call luassert.stub directly.
+--
+-- Supported mock namespaces:
+--   fn      -> vim.fn
+--   api     -> vim.api
+--   ui      -> vim.ui
+--   keymap  -> vim.keymap
+--   vim     -> the vim global itself (e.g. vim.cmd, vim.notify)
+--   jjournal -> this module (e.g. to stub jjournal.execute)
+--   on      -> escape hatch for arbitrary tables, as a list of
+--              { target, key, value } triples, e.g. a fake telescope module
+-- A mock value may be a fixed return value or a function; luassert.stub
+-- invokes it as the implementation when the value is callable.
+--
+-- `config` overrides the path/use_default_mappings passed to setup().
 local function setup_test(mocks)
 	mocks = mocks or {}
-
-	jjournal.setup({
-		path = "/virtual/test/journal/path/",
-		use_default_mappings = false,
-	})
-
 	local active_stubs = {}
 
-	if mocks.fn then
-		for func_name, return_value in pairs(mocks.fn) do
-			table.insert(active_stubs, stub(vim.fn, func_name, return_value))
+	local function stub_namespace(target, entries)
+		for key, value in pairs(entries or {}) do
+			table.insert(active_stubs, stub(target, key, value))
 		end
 	end
 
-	if mocks.api then
-		for func_name, return_value in pairs(mocks.api) do
-			table.insert(active_stubs, stub(vim.api, func_name, return_value))
-		end
+	stub_namespace(vim.fn, mocks.fn)
+	stub_namespace(vim.api, mocks.api)
+	stub_namespace(vim.ui, mocks.ui)
+	stub_namespace(vim.keymap, mocks.keymap)
+	stub_namespace(vim, mocks.vim)
+	stub_namespace(jjournal, mocks.jjournal)
+
+	for _, entry in ipairs(mocks.on or {}) do
+		table.insert(active_stubs, stub(entry[1], entry[2], entry[3]))
 	end
+
+	jjournal.setup(vim.tbl_extend("force", {
+		path = "/virtual/test/journal/path/",
+		use_default_mappings = false,
+	}, mocks.config or {}))
 
 	return function()
 		for _, s in ipairs(active_stubs) do
@@ -31,14 +56,40 @@ local function setup_test(mocks)
 	end
 end
 
+describe("jjournal config", function()
+	it("defaults to '~/notes/journals/' with default mappings enabled before setup() is called", function()
+		package.loaded["jjournal"] = nil
+		local fresh = require("jjournal")
+		package.loaded["jjournal"] = jjournal -- restore the shared instance used by the rest of the suite
+
+		assert.are.equal(vim.fn.expand("~/notes/journals/"), fresh.config.path)
+		assert.is_true(fresh.config.use_default_mappings)
+	end)
+
+	it("normalizes a configured path that has no trailing slash", function()
+		local cleanup = setup_test({
+			config = { path = "/virtual/test/no-trailing-slash" },
+			vim = { cmd = true },
+		})
+
+		jjournal.open_date("2026-07-09", "edit")
+
+		assert.stub(vim.cmd).was_called_with("edit /virtual/test/no-trailing-slash/2026-07-09.md")
+
+		cleanup()
+	end)
+end)
+
 describe("jjournal.resolve_date", function()
 	it("resolves 'today' to today's date", function()
-		setup_test()
+		local cleanup = setup_test()
 		local expected_today = vim.fn.strftime("%F")
 
 		jjournal.resolve_date("today", function(resolved_date)
 			assert.are.equal(expected_today, resolved_date)
 		end)
+
+		cleanup()
 	end)
 
 	it("resolves 'next' by stepping forward across empty days to the next existing entry", function()
@@ -107,10 +158,9 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'prompt' by delegating to prompt_for_date", function()
-		local cleanup = setup_test()
-		local input_stub = stub(vim.ui, "input").invokes(function(_, callback)
-			callback("2026-07-09")
-		end)
+		local cleanup = setup_test({
+			ui = { input = function(_, callback) callback("2026-07-09") end },
+		})
 
 		local received
 		jjournal.resolve_date("prompt", function(date)
@@ -119,17 +169,15 @@ describe("jjournal.resolve_date", function()
 
 		assert.are.equal("2026-07-09", received)
 
-		input_stub:revert()
 		cleanup()
 	end)
 end)
 
 describe("jjournal.prompt_for_date", function()
 	it("invokes the callback with user input", function()
-		local cleanup = setup_test()
-		local input_stub = stub(vim.ui, "input").invokes(function(_, callback)
-			callback("2026-07-09")
-		end)
+		local cleanup = setup_test({
+			ui = { input = function(_, callback) callback("2026-07-09") end },
+		})
 
 		local received
 		jjournal.prompt_for_date(function(date)
@@ -138,15 +186,13 @@ describe("jjournal.prompt_for_date", function()
 
 		assert.are.equal("2026-07-09", received)
 
-		input_stub:revert()
 		cleanup()
 	end)
 
 	it("does not invoke the callback when the prompt is cancelled", function()
-		local cleanup = setup_test()
-		local input_stub = stub(vim.ui, "input").invokes(function(_, callback)
-			callback(nil)
-		end)
+		local cleanup = setup_test({
+			ui = { input = function(_, callback) callback(nil) end },
+		})
 
 		local was_called = false
 		jjournal.prompt_for_date(function()
@@ -155,65 +201,57 @@ describe("jjournal.prompt_for_date", function()
 
 		assert.is_false(was_called)
 
-		input_stub:revert()
 		cleanup()
 	end)
 end)
 
 describe("jjournal.open_date", function()
 	it("opens the resolved date with the given command", function()
-		local cleanup = setup_test()
-		local cmd_stub = stub(vim, "cmd")
+		local cleanup = setup_test({ vim = { cmd = true } })
 
 		jjournal.open_date("2026-07-09", "vsplit")
 
-		assert.stub(cmd_stub).was_called_with("vsplit /virtual/test/journal/path/2026-07-09.md")
+		assert.stub(vim.cmd).was_called_with("vsplit /virtual/test/journal/path/2026-07-09.md")
 
-		cmd_stub:revert()
 		cleanup()
 	end)
 
 	it("defaults to 'edit' when no command is given", function()
-		local cleanup = setup_test()
-		local cmd_stub = stub(vim, "cmd")
+		local cleanup = setup_test({ vim = { cmd = true } })
 
 		jjournal.open_date("2026-07-09")
 
-		assert.stub(cmd_stub).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
+		assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
 
-		cmd_stub:revert()
 		cleanup()
 	end)
 
 	it("warns and does not open anything when date_str is nil", function()
-		local cleanup = setup_test()
-		local notify_stub = stub(vim, "notify")
-		local cmd_stub = stub(vim, "cmd")
+		local cleanup = setup_test({ vim = { notify = true, cmd = true } })
 
 		jjournal.open_date(nil)
 
-		assert.stub(notify_stub).was_called(1)
-		assert.are.equal(vim.log.levels.WARN, notify_stub.calls[1].vals[2])
-		assert.stub(cmd_stub).was_not_called()
+		assert.stub(vim.notify).was_called(1)
+		assert.are.equal(vim.log.levels.WARN, vim.notify.calls[1].vals[2])
+		assert.stub(vim.cmd).was_not_called()
 
-		notify_stub:revert()
-		cmd_stub:revert()
 		cleanup()
 	end)
 end)
 
 describe("jjournal.search_backlog", function()
 	it("delegates to telescope's live_grep with the configured path", function()
-		local cleanup = setup_test()
 		local fake_builtin = { live_grep = function() end }
 		package.loaded["telescope.builtin"] = fake_builtin
-		local live_grep_stub = stub(fake_builtin, "live_grep")
+
+		local cleanup = setup_test({ on = { { fake_builtin, "live_grep" } } })
 
 		jjournal.search_backlog()
 
-		assert.stub(live_grep_stub).was_called(1)
-		local call_args = live_grep_stub.calls[1].vals[1]
+		assert.stub(fake_builtin.live_grep).was_called(1)
+		local call_args = fake_builtin.live_grep.calls[1].vals[1]
 		assert.are.same({ "/virtual/test/journal/path/" }, call_args.search_dirs)
+		assert.are.equal("Search Journal Backlog", call_args.prompt_title)
 
 		package.loaded["telescope.builtin"] = nil
 		cleanup()
@@ -222,101 +260,130 @@ end)
 
 describe("jjournal.execute", function()
 	it("delegates to search_backlog for the 'search' target without resolving a date", function()
-		local cleanup = setup_test()
-		local search_stub = stub(jjournal, "search_backlog")
+		local cleanup = setup_test({ jjournal = { search_backlog = true } })
 
 		jjournal.execute("search")
 
-		assert.stub(search_stub).was_called(1)
+		assert.stub(jjournal.search_backlog).was_called(1)
 
-		search_stub:revert()
 		cleanup()
 	end)
 
 	it("resolves and opens a date for non-search targets", function()
-		local cleanup = setup_test({ fn = { strftime = "2026-07-10" } })
-		local cmd_stub = stub(vim, "cmd")
+		local cleanup = setup_test({
+			fn = { strftime = "2026-07-10" },
+			vim = { cmd = true },
+		})
 
 		jjournal.execute("today", "vsplit")
 
-		assert.stub(cmd_stub).was_called_with("vsplit /virtual/test/journal/path/2026-07-10.md")
+		assert.stub(vim.cmd).was_called_with("vsplit /virtual/test/journal/path/2026-07-10.md")
 
-		cmd_stub:revert()
 		cleanup()
 	end)
 end)
 
 describe("jjournal.setup", function()
 	it("merges provided options over the existing config without clobbering unspecified keys", function()
-		local keymap_stub = stub(vim.keymap, "set")
+		local cleanup = setup_test({ keymap = { set = true } })
 
-		jjournal.setup({ path = "/virtual/test/journal/path/", use_default_mappings = false })
 		jjournal.setup({ use_default_mappings = true })
 
 		assert.are.equal("/virtual/test/journal/path/", jjournal.config.path)
 		assert.is_true(jjournal.config.use_default_mappings)
 
-		keymap_stub:revert()
+		cleanup()
 	end)
 
-	it("binds default keymaps when use_default_mappings is true", function()
-		local keymap_stub = stub(vim.keymap, "set")
-
-		jjournal.setup({ path = "/virtual/test/journal/path/", use_default_mappings = true })
+	it("binds every default mapping in normal mode, wired to execute the right target/cmd, with its desc", function()
+		local cleanup = setup_test({
+			config = { use_default_mappings = true },
+			keymap = { set = true },
+			jjournal = { execute = true },
+		})
 
 		local expected_count = 0
 		for _ in pairs(jjournal.mappings) do
 			expected_count = expected_count + 1
 		end
-		assert.stub(keymap_stub).was_called(expected_count)
+		assert.stub(vim.keymap.set).was_called(expected_count)
 
-		keymap_stub:revert()
+		for lhs, spec in pairs(jjournal.mappings) do
+			local matched
+			for _, call in ipairs(vim.keymap.set.calls) do
+				if call.vals[1] == "n" and call.vals[2] == lhs then
+					matched = call
+					break
+				end
+			end
+
+			assert.is_not_nil(matched, "expected a keymap.set call for " .. lhs)
+			assert.are.same({ desc = spec.desc, silent = true }, matched.vals[4])
+
+			matched.vals[3]() -- invoke the bound handler as if the key had been pressed
+			assert.stub(jjournal.execute).was_called_with(spec.target, spec.cmd)
+		end
+
+		cleanup()
 	end)
 
-	it("skips keymap binding when use_default_mappings is false", function()
-		local keymap_stub = stub(vim.keymap, "set")
+	it("skips keymap binding entirely when use_default_mappings is false", function()
+		local cleanup = setup_test({ keymap = { set = true } })
 
-		jjournal.setup({ path = "/virtual/test/journal/path/", use_default_mappings = false })
+		assert.stub(vim.keymap.set).was_not_called()
 
-		assert.stub(keymap_stub).was_not_called()
+		cleanup()
+	end)
 
-		keymap_stub:revert()
+	it("skips binding an individual mapping that has been explicitly disabled with false", function()
+		local original_spec = jjournal.mappings["gj"]
+		jjournal.mappings["gj"] = false
+
+		local cleanup = setup_test({
+			config = { use_default_mappings = true },
+			keymap = { set = true },
+		})
+
+		for _, call in ipairs(vim.keymap.set.calls) do
+			assert.are_not.equal("gj", call.vals[2])
+		end
+
+		jjournal.mappings["gj"] = original_spec
+		cleanup()
 	end)
 
 	describe("journal buffer status autocmd", function()
-		local function setup_with_autocmd_capture()
-			local original = vim.api.nvim_create_autocmd
+		local function capture_autocmd_callback()
 			local captured
-
-			vim.api.nvim_create_autocmd = function(events, autocmd_opts)
-				captured = autocmd_opts.callback
-				return original(events, autocmd_opts)
-			end
-
-			jjournal.setup({ path = "/virtual/test/journal/path/", use_default_mappings = false })
-
-			vim.api.nvim_create_autocmd = original
+			local cleanup = setup_test({
+				api = {
+					nvim_create_autocmd = function(_, opts)
+						captured = opts.callback
+					end,
+				},
+			})
+			cleanup()
 			return captured
 		end
 
 		it("registers a BufReadPost/BufNewFile autocmd scoped to the configured journal path", function()
-			local autocmd_stub = stub(vim.api, "nvim_create_autocmd")
+			local cleanup = setup_test({ api = { nvim_create_autocmd = true } })
 
-			jjournal.setup({ path = "/virtual/test/journal/path/", use_default_mappings = false })
-
-			assert.stub(autocmd_stub).was_called(1)
-			local events = autocmd_stub.calls[1].vals[1]
-			local opts = autocmd_stub.calls[1].vals[2]
+			assert.stub(vim.api.nvim_create_autocmd).was_called(1)
+			local events = vim.api.nvim_create_autocmd.calls[1].vals[1]
+			local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
 			assert.are.same({ "BufReadPost", "BufNewFile" }, events)
 			assert.are.equal("/virtual/test/journal/path/*.md", opts.pattern)
 
-			autocmd_stub:revert()
+			cleanup()
 		end)
 
 		it("flags the buffer as today's journal when its name matches today's date", function()
-			local strftime_stub = stub(vim.fn, "strftime", "2026-07-10")
-			local callback = setup_with_autocmd_capture()
-			local buf_name_stub = stub(vim.api, "nvim_buf_get_name", "/virtual/test/journal/path/2026-07-10.md")
+			local callback = capture_autocmd_callback()
+			local cleanup = setup_test({
+				fn = { strftime = "2026-07-10" },
+				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
+			})
 			local buf = vim.api.nvim_create_buf(false, true)
 
 			callback({ buf = buf })
@@ -324,14 +391,15 @@ describe("jjournal.setup", function()
 			assert.are.equal("today", vim.b[buf].journal_status)
 
 			vim.api.nvim_buf_delete(buf, { force = true })
-			buf_name_stub:revert()
-			strftime_stub:revert()
+			cleanup()
 		end)
 
 		it("flags the buffer as an archived journal when its name does not match today's date", function()
-			local strftime_stub = stub(vim.fn, "strftime", "2026-07-10")
-			local callback = setup_with_autocmd_capture()
-			local buf_name_stub = stub(vim.api, "nvim_buf_get_name", "/virtual/test/journal/path/2026-06-01.md")
+			local callback = capture_autocmd_callback()
+			local cleanup = setup_test({
+				fn = { strftime = "2026-07-10" },
+				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-06-01.md" },
+			})
 			local buf = vim.api.nvim_create_buf(false, true)
 
 			callback({ buf = buf })
@@ -339,8 +407,7 @@ describe("jjournal.setup", function()
 			assert.are.equal("archive", vim.b[buf].journal_status)
 
 			vim.api.nvim_buf_delete(buf, { force = true })
-			buf_name_stub:revert()
-			strftime_stub:revert()
+			cleanup()
 		end)
 	end)
 end)
