@@ -410,8 +410,16 @@ describe("jjournal.execute", function()
 end)
 
 describe("jjournal.setup", function()
+	-- Every spec here needs vim.keymap.set stubbed; override config to flip
+	-- use_default_mappings on, or add other mocks, per test.
+	local function setup_setup_test(overrides)
+		return setup_test(vim.tbl_deep_extend("force", {
+			keymap = { set = true },
+		}, overrides or {}))
+	end
+
 	it("merges provided options over the existing config without clobbering unspecified keys", function()
-		local cleanup = setup_test({ keymap = { set = true } })
+		local cleanup = setup_setup_test()
 
 		jjournal.setup({ use_default_mappings = true })
 
@@ -429,9 +437,8 @@ describe("jjournal.setup", function()
 	end)
 
 	it("binds every default mapping in normal mode, wired to execute the right target/cmd, with its desc", function()
-		local cleanup = setup_test({
+		local cleanup = setup_setup_test({
 			config = { use_default_mappings = true },
-			keymap = { set = true },
 			jjournal = { execute = true },
 		})
 
@@ -461,7 +468,7 @@ describe("jjournal.setup", function()
 	end)
 
 	it("skips keymap binding entirely when use_default_mappings is false", function()
-		local cleanup = setup_test({ keymap = { set = true } })
+		local cleanup = setup_setup_test()
 
 		assert.stub(vim.keymap.set).was_not_called()
 
@@ -472,10 +479,7 @@ describe("jjournal.setup", function()
 		local original_spec = jjournal.mappings["gj"]
 		jjournal.mappings["gj"] = false
 
-		local cleanup = setup_test({
-			config = { use_default_mappings = true },
-			keymap = { set = true },
-		})
+		local cleanup = setup_setup_test({ config = { use_default_mappings = true } })
 
 		for _, call in ipairs(vim.keymap.set.calls) do
 			assert.are_not.equal("gj", call.vals[2])
@@ -511,12 +515,18 @@ describe("jjournal.setup", function()
 			cleanup()
 		end)
 
+		-- "Today" is fixed at 2026-07-10 for both specs below; only the buffer's
+		-- name (whether it matches today's date) varies between them.
+		local function setup_status_test(buffer_name)
+			return setup_test({
+				fn = { strftime = "2026-07-10" },
+				api = { nvim_buf_get_name = buffer_name },
+			})
+		end
+
 		it("flags the buffer as today's journal when its name matches today's date", function()
 			local callback = capture_autocmd_callback()
-			local cleanup = setup_test({
-				fn = { strftime = "2026-07-10" },
-				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
-			})
+			local cleanup = setup_status_test("/virtual/test/journal/path/2026-07-10.md")
 			local buf = vim.api.nvim_create_buf(false, true)
 
 			callback({ buf = buf })
@@ -529,10 +539,7 @@ describe("jjournal.setup", function()
 
 		it("flags the buffer as an archived journal when its name does not match today's date", function()
 			local callback = capture_autocmd_callback()
-			local cleanup = setup_test({
-				fn = { strftime = "2026-07-10" },
-				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-06-01.md" },
-			})
+			local cleanup = setup_status_test("/virtual/test/journal/path/2026-06-01.md")
 			local buf = vim.api.nvim_create_buf(false, true)
 
 			callback({ buf = buf })
