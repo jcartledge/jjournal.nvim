@@ -30,6 +30,17 @@ describe("jjournal config", function()
 end)
 
 describe("jjournal.resolve_date", function()
+	-- Chronological-stepping specs need the current buffer to be inside the
+	-- configured journal path, so the path-scoping check in
+	-- get_current_date_coordinate treats it as the navigation anchor; only
+	-- fn (readdir/expand) is what each of those specs is actually testing.
+	-- Override api.nvim_buf_get_name to move the buffer itself.
+	local function setup_resolve_date_test(overrides)
+		return setup_test(vim.tbl_deep_extend("force", {
+			api = { nvim_buf_get_name = "/virtual/test/journal/path/current.md" },
+		}, overrides or {}))
+	end
+
 	it("resolves 'today' to today's date", function()
 		local cleanup = setup_test()
 		local expected_today = vim.fn.strftime("%F")
@@ -42,7 +53,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'next' by stepping forward across empty days to the next existing entry", function()
-		local cleanup = setup_test({
+		local cleanup = setup_resolve_date_test({
 			fn = {
 				readdir = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-01.md",
@@ -57,7 +68,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("prioritizes virtual unwritten buffers over disk storage when resolving 'next'", function()
-		local cleanup = setup_test({
+		local cleanup = setup_resolve_date_test({
 			fn = {
 				readdir = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-01.md",
@@ -77,7 +88,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'next' to nil when there is no later entry", function()
-		local cleanup = setup_test({
+		local cleanup = setup_resolve_date_test({
 			fn = {
 				readdir = { "2026-06-01.md", "2026-06-02.md" },
 				expand = "2026-06-02.md",
@@ -92,7 +103,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'prev' by stepping backward across empty days to the previous existing entry", function()
-		local cleanup = setup_test({
+		local cleanup = setup_resolve_date_test({
 			fn = {
 				readdir = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-03.md",
@@ -101,6 +112,23 @@ describe("jjournal.resolve_date", function()
 
 		jjournal.resolve_date("prev", function(resolved_date)
 			assert.are.equal("2026-06-01", resolved_date)
+		end)
+
+		cleanup()
+	end)
+
+	it("falls back to today when the current buffer is date-named but outside the journal path", function()
+		local cleanup = setup_resolve_date_test({
+			fn = {
+				readdir = { "2026-06-01.md", "2026-06-03.md" },
+				expand = "2026-06-02.md",
+				strftime = "2026-07-10",
+			},
+			api = { nvim_buf_get_name = "/some/other/notes/2026-06-02.md" },
+		})
+
+		jjournal.resolve_date("next", function(resolved_date)
+			assert.is_nil(resolved_date)
 		end)
 
 		cleanup()

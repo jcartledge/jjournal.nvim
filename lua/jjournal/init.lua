@@ -16,12 +16,21 @@ end
 -- PRIVATE CHRONOLOGICAL HELPERS (Decomposed Atom 1 sub-components)
 -- ========================================================================
 
--- Pinpoints the current YYYY-MM-DD anchor string based on the active window context
+-- Pinpoints the current YYYY-MM-DD anchor string based on the active window context.
+-- Only trusts the buffer's own name if it actually lives inside the configured
+-- journal path -- an unrelated date-named file elsewhere shouldn't be treated
+-- as the navigation anchor.
 local function get_current_date_coordinate()
+  local buf_name = vim.api.nvim_buf_get_name(0)
   local current = vim.fn.expand "%:t"
-  if current == "" then current = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":t") end
+  if current == "" then current = vim.fn.fnamemodify(buf_name, ":t") end
 
-  if not current:match "%d%d%d%d%-%d%d%-%d%d" then return vim.fn.strftime "%F" .. ".md" end
+  local buf_dir = vim.fn.fnamemodify(buf_name, ":p:h")
+  local journal_dir = vim.fn.fnamemodify(get_path(), ":p"):gsub("/$", "")
+
+  if buf_dir ~= journal_dir or not current:match "%d%d%d%d%-%d%d%-%d%d" then
+    return vim.fn.strftime "%F" .. ".md"
+  end
   return current
 end
 
