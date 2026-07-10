@@ -121,6 +121,13 @@ blank future days to plan ahead, or back out of one. Otherwise (still
 before today), it skips to the nearest existing entry in that direction
 instead of opening blank historical days one at a time.
 
+Opening a date that doesn't exist on disk yet -- by any mapping, not
+just stepping -- opens it as a disposable preview: if you navigate away
+without typing anything into it, it's discarded automatically (no
+buffer left behind, no file written). Starting to type in it makes it a
+normal, permanent entry like any other, kept exactly as if you'd opened
+it directly.
+
 To disable a single mapping while keeping the rest, set it to `false` on
 `require("jjournal").mappings` before calling `setup()`: >lua
 

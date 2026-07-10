@@ -17,6 +17,8 @@ require("jjournal").setup({
 
 With `use_default_mappings = true` (the default), `gj` opens today's journal entry, `[j`/`]j` step to the previous/next entry, `<leader>jj` prompts for a date, and `<leader>fj` searches the backlog.
 
+Opening a date that doesn't exist yet creates a disposable preview buffer: navigate away without editing it and it vanishes with no file written; start typing and it's kept like any other entry.
+
 See `:help jjournal` for the full config reference, all default mappings, and how to customize backlog search.
 
 **Upgrading from a flat layout:** `file_path` used to default to the flat `"%Y-%m-%d.md"`; it now defaults to nested `"%Y/%m/%Y-%m-%d.md"`. If you have existing entries in the old flat layout, either set `file_path = "%Y-%m-%d.md"` explicitly to keep them where they are, or move your existing files to match the new layout yourself (e.g. with `zmv` in zsh) before upgrading.

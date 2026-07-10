@@ -61,6 +61,8 @@ Avoid undeclared globals in spec files. Busted normally injects `describe`/`it` 
 
 Avoid busted's test lifecycle functions (`before_each`, `after_each`, `setup`, `teardown`). They spread state-setup logic across a file, away from the test that depends on it, and make a single test hard to read in isolation. Prefer passing the test body into a shared, reusable helper (like `setup_test`) that wraps setup and cleanup around it, rather than framework hooks.
 
+Tests run inside a real headless Neovim, not a Lua-only stub, so a couple of genuine Neovim behaviors are worth knowing when a spec creates real buffers (via `vim.api.nvim_create_buf`) rather than stubbing everything: a *scratch* buffer (`nvim_create_buf(false, true)`) is documented to always report `'nomodified'` regardless of content, so any spec that needs a buffer to actually become modified must use a normal one (`nvim_create_buf(false, false)`) instead. And a callback that defers work via `vim.schedule` (e.g. to avoid mutating a buffer mid-transition, like wiping it during its own `BufWinLeave`) won't have run yet immediately after the spec invokes the callback — give the event loop a tick with `vim.wait(20)` before asserting on the outcome.
+
 ## Before committing
 
 Work through this checklist before committing. If a check surfaces a gap, stop, fix it, and wait for confirmation before committing — don't fold an unreviewed fix into the commit silently.

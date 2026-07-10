@@ -203,7 +203,16 @@ M.open_date = function(date_str, cmd)
   local dir = vim.fn.fnamemodify(full_path, ":h")
   if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
 
+  -- Tracks whether the entry already exists on disk before the cmd below
+  -- opens/creates a buffer for it, so an unedited buffer for a
+  -- not-yet-existing entry can be flagged as a disposable preview (see the
+  -- BufWinLeave autocmd in register_autocmds) rather than persisting
+  -- forever just because you looked at it.
+  local is_new_entry = vim.fn.filereadable(full_path) == 0
+
   vim.cmd(string.format("%s %s", cmd or "edit", full_path))
+
+  if is_new_entry then vim.b[vim.fn.bufadd(full_path)].jjournal_preview = true end
 end
 
 -- Global Search: pluggable search providers, selected via config.search.
@@ -293,9 +302,15 @@ local function bind_mappings()
 end
 
 local function register_autocmds()
+  -- Created once and reused for both autocmds below: nvim_create_augroup's
+  -- clear = true wipes the group's existing contents, so calling it a
+  -- second time here would erase the first autocmd we just registered.
+  local group = vim.api.nvim_create_augroup("JournalEngineCore", { clear = true })
+  local pattern = get_base_dir() .. "**/*" .. file_path_extension(M.config.file_path)
+
   vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
-    group = vim.api.nvim_create_augroup("JournalEngineCore", { clear = true }),
-    pattern = get_base_dir() .. "**/*" .. file_path_extension(M.config.file_path),
+    group = group,
+    pattern = pattern,
     callback = function(args)
       local current_buf = args.buf
       local current_path = vim.api.nvim_buf_get_name(current_buf)
@@ -306,6 +321,36 @@ local function register_autocmds()
       else
         vim.b[current_buf].journal_status = "archive"
       end
+    end,
+  })
+
+  -- Auto-cleans unedited "preview" buffers (see open_date's jjournal_preview
+  -- flag): once a preview buffer stops being displayed anywhere, wipe it --
+  -- unless it's been modified (a real edit makes it a normal, persistent
+  -- buffer from then on; Vim's own `modified` state is sufficient, no
+  -- separate flag-stripping needed) or another window still shows it.
+  vim.api.nvim_create_autocmd("BufWinLeave", {
+    group = group,
+    pattern = pattern,
+    callback = function(args)
+      local buf = args.buf
+      if not vim.b[buf].jjournal_preview then return end
+
+      -- Deferred to the next event-loop tick: wiping the buffer
+      -- synchronously here -- while Vim is still mid-transition away from
+      -- it, e.g. during the very :edit that's replacing it in this window
+      -- -- raises E937 ("attempt to delete a buffer that is in use"), even
+      -- though it's the buffer BufWinLeave says we're leaving. By the time
+      -- this runs, that transition has completed, so win_findbuf below
+      -- reflects reality directly: 0 genuinely means displayed nowhere,
+      -- with no need to account for the leaving window still counting.
+      vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(buf) then return end
+        if vim.api.nvim_buf_get_option(buf, "modified") then return end
+        if #vim.fn.win_findbuf(buf) > 0 then return end
+
+        vim.cmd("bwipeout " .. buf)
+      end)
     end,
   })
 end
