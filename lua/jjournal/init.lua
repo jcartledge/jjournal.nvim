@@ -4,6 +4,7 @@ local M = {}
 M.config = {
   path = vim.fn.expand "~/notes/journals/",
   use_default_mappings = true,
+  search = "auto",
 }
 
 local function get_path()
@@ -131,12 +132,64 @@ M.open_date = function(date_str, cmd)
   vim.cmd(string.format("%s %s", cmd or "edit", full_path))
 end
 
--- Global Search (Decoupled text aggregation)
+-- Global Search: pluggable search providers, selected via config.search.
+local function has_telescope()
+  return pcall(require, "telescope.builtin")
+end
+
+-- Prompts for a search term, then greps the configured journal path with
+-- Vim's builtin :vimgrep and opens the results in the quickfix list. Used
+-- directly when config.search = "builtin", and as the fallback when
+-- telescope isn't available.
+local function builtin_search(path)
+  vim.ui.input({ prompt = "Search journal for: " }, function(term)
+    if not term or term == "" then return end
+
+    local pattern = vim.fn.escape(term, "/\\")
+    vim.cmd(string.format("vimgrep /%s/gj %s**/*.md", pattern, path))
+    vim.cmd "copen"
+  end)
+end
+
+M.search_providers = {
+  telescope = function(path)
+    require("telescope.builtin").live_grep {
+      search_dirs = { path },
+      prompt_title = "Search Journal Backlog",
+    }
+  end,
+  builtin = builtin_search,
+}
+
+-- config.search defaults to "auto" (telescope if available, otherwise the
+-- builtin vimgrep-based search). It can also be "telescope" or "builtin"
+-- explicitly, or a function(path) for any other picker.
 M.search_backlog = function()
-  require("telescope.builtin").live_grep {
-    search_dirs = { M.config.path },
-    prompt_title = "Search Journal Backlog",
-  }
+  local choice = M.config.search
+
+  if type(choice) == "function" then
+    choice(get_path())
+    return
+  end
+
+  if choice == "auto" or choice == nil then
+    choice = has_telescope() and "telescope" or "builtin"
+  elseif choice == "telescope" and not has_telescope() then
+    vim.notify(
+      "jjournal: telescope.nvim not found; falling back to builtin search. "
+        .. "Install telescope.nvim or set config.search = 'builtin' to silence this.",
+      vim.log.levels.WARN
+    )
+    choice = "builtin"
+  end
+
+  local provider = M.search_providers[choice]
+  if not provider then
+    vim.notify("jjournal: unknown search provider '" .. tostring(choice) .. "'", vim.log.levels.WARN)
+    return
+  end
+
+  provider(get_path())
 end
 
 -- ========================================================================

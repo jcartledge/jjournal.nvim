@@ -15,10 +15,18 @@ Point your plugin manager at this repo, then call setup:
 require("jjournal").setup({
   path = "~/notes/journals/", -- default
   use_default_mappings = true,
+  search = "auto", -- "auto" | "telescope" | "builtin" | function(path)
 })
 ```
 
-Default keymaps (when `use_default_mappings = true`): `gj`/`gJ` open today's journal (split), `[j`/`]j` and `[J`/`]J` step to the previous/next journal (split), `<leader>jj`/`<leader>jJ` prompt for a date (split), `<leader>fj` greps the journal backlog via Telescope.
+Default keymaps (when `use_default_mappings = true`): `gj`/`gJ` open today's journal (split), `[j`/`]j` and `[J`/`]J` step to the previous/next journal (split), `<leader>jj`/`<leader>jJ` prompt for a date (split), `<leader>fj` searches the journal backlog.
+
+`search` controls what `<leader>fj` (and `execute("search")`) uses to search the backlog:
+
+- `"auto"` (default): uses [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)'s `live_grep` if installed, otherwise falls back to a builtin `:vimgrep` search (prompts for a term, then opens the results in the quickfix list) with no warning.
+- `"telescope"`: always uses telescope; warns and falls back to the builtin search if telescope isn't installed.
+- `"builtin"`: always uses the builtin `:vimgrep` search, even if telescope is installed.
+- a function `function(path)`: called directly with the configured journal path, for any other picker (fzf-lua, mini.pick, snacks.picker, etc.).
 
 ## Developing
 

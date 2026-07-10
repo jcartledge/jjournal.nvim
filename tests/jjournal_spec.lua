@@ -188,11 +188,14 @@ describe("jjournal.open_date", function()
 end)
 
 describe("jjournal.search_backlog", function()
-	it("delegates to telescope's live_grep with the configured path", function()
+	it("uses telescope by default when it is available", function()
 		local fake_builtin = { live_grep = function() end }
 		package.loaded["telescope.builtin"] = fake_builtin
 
-		local cleanup = setup_test({ on = { { fake_builtin, "live_grep" } } })
+		local cleanup = setup_test({
+			on = { { fake_builtin, "live_grep" } },
+			vim = { notify = true },
+		})
 
 		jjournal.search_backlog()
 
@@ -200,8 +203,121 @@ describe("jjournal.search_backlog", function()
 		local call_args = fake_builtin.live_grep.calls[1].vals[1]
 		assert.are.same({ "/virtual/test/journal/path/" }, call_args.search_dirs)
 		assert.are.equal("Search Journal Backlog", call_args.prompt_title)
+		assert.stub(vim.notify).was_not_called()
 
 		package.loaded["telescope.builtin"] = nil
+		cleanup()
+	end)
+
+	it("falls back to the builtin search silently in 'auto' mode when telescope is unavailable", function()
+		local cleanup = setup_test({
+			ui = { input = function(_, callback) callback("todo") end },
+			vim = { cmd = true, notify = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(vim.cmd).was_called_with("vimgrep /todo/gj /virtual/test/journal/path/**/*.md")
+		assert.stub(vim.cmd).was_called_with("copen")
+		assert.stub(vim.notify).was_not_called()
+
+		cleanup()
+	end)
+
+	it("warns and falls back to builtin when 'telescope' is explicitly requested but unavailable", function()
+		local cleanup = setup_test({
+			config = { search = "telescope" },
+			ui = { input = function(_, callback) callback("todo") end },
+			vim = { cmd = true, notify = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(vim.notify).was_called(1)
+		assert.are.equal(vim.log.levels.WARN, vim.notify.calls[1].vals[2])
+		assert.stub(vim.cmd).was_called_with("vimgrep /todo/gj /virtual/test/journal/path/**/*.md")
+
+		cleanup()
+	end)
+
+	it("uses the builtin search when 'builtin' is explicitly configured, even if telescope is available", function()
+		local fake_builtin = { live_grep = function() end }
+		package.loaded["telescope.builtin"] = fake_builtin
+
+		local cleanup = setup_test({
+			config = { search = "builtin" },
+			on = { { fake_builtin, "live_grep" } },
+			ui = { input = function(_, callback) callback("todo") end },
+			vim = { cmd = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(fake_builtin.live_grep).was_not_called()
+		assert.stub(vim.cmd).was_called_with("vimgrep /todo/gj /virtual/test/journal/path/**/*.md")
+
+		package.loaded["telescope.builtin"] = nil
+		cleanup()
+	end)
+
+	it("escapes slashes in the search term before building the vimgrep pattern", function()
+		local cleanup = setup_test({
+			config = { search = "builtin" },
+			ui = { input = function(_, callback) callback("a/b") end },
+			vim = { cmd = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(vim.cmd).was_called_with("vimgrep /a\\/b/gj /virtual/test/journal/path/**/*.md")
+		assert.stub(vim.cmd).was_called_with("copen")
+
+		cleanup()
+	end)
+
+	it("does not vimgrep when the search prompt is cancelled", function()
+		local cleanup = setup_test({
+			config = { search = "builtin" },
+			ui = { input = function(_, callback) callback(nil) end },
+			vim = { cmd = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(vim.cmd).was_not_called()
+
+		cleanup()
+	end)
+
+	it("calls a function configured as config.search directly with the journal path", function()
+		local received_path
+		local cleanup = setup_test({
+			config = {
+				search = function(path)
+					received_path = path
+				end,
+			},
+		})
+
+		jjournal.search_backlog()
+
+		assert.are.equal("/virtual/test/journal/path/", received_path)
+
+		cleanup()
+	end)
+
+	it("warns and does nothing for an unrecognized config.search value", function()
+		local cleanup = setup_test({
+			config = { search = "not-a-real-provider" },
+			vim = { notify = true, cmd = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(vim.notify).was_called(1)
+		assert.are.equal(vim.log.levels.WARN, vim.notify.calls[1].vals[2])
+		assert.stub(vim.cmd).was_not_called()
+
 		cleanup()
 	end)
 end)
