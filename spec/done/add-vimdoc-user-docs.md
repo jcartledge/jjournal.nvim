@@ -14,8 +14,8 @@
 
 * **Given** README.md after this change,
 * **When** a contributor reads it,
-* **Then** it covers only development concerns (setup, testing, project structure, ways of working) and points to `:help jjournal` for end-user usage instead of duplicating it.
+* **Then** it opens with a brief installation snippet and basic usage (enough for someone evaluating the plugin to get going), links to `:help jjournal` for the full end-user reference, and then covers development concerns (testing, project structure, ways of working) below that — without duplicating the full config/keymap reference now living in `doc/jjournal.txt`.
 
 ### **Busted Test Cases**
 
-This story adds a vimdoc help file and trims README.md — no Lua behavior changes, so there are no busted specs to write. Verify by running `:helptags` on the `doc/` directory and confirming `:help jjournal` renders correctly with working tag links, and by confirming README.md no longer duplicates the config/keymap details now living in `doc/jjournal.txt`.
+This story adds a vimdoc help file and restructures README.md — no Lua behavior changes, so there are no busted specs to write. Verify by running `:helptags` on the `doc/` directory and confirming `:help jjournal` renders correctly with working tag links, and by confirming README.md leads with install/basic-usage + a link to `:help jjournal`, followed by dev-only content, without duplicating the full reference now living in `doc/jjournal.txt`.

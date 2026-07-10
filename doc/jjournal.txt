@@ -1,0 +1,149 @@
+*jjournal.txt*  A minimal daily journaling plugin for Neovim
+
+==============================================================================
+CONTENTS                                                  *jjournal-contents*
+
+    1. Introduction ............................. |jjournal-introduction|
+    2. Setup ..................................... |jjournal-setup|
+    3. Configuration ............................. |jjournal-configuration|
+    4. Default mappings .......................... |jjournal-mappings|
+    5. Search providers .......................... |jjournal-search|
+    6. Lua API ................................... |jjournal-api|
+
+==============================================================================
+1. Introduction                                      *jjournal-introduction*
+
+jjournal.nvim is a minimal daily journaling plugin. Each day is a single
+Markdown file named by date (e.g. `2026-07-09.md`) inside a configured
+journal folder. It provides mappings to jump to today's entry, step to the
+previous/next existing entry, jump to an arbitrary date, and search across
+your journal backlog.
+
+==============================================================================
+2. Setup                                                    *jjournal-setup*
+
+Call setup() once, typically from your plugin manager's config or
+`init.lua`: >lua
+
+    require("jjournal").setup({
+      path = "~/notes/journals/",
+      use_default_mappings = true,
+      search = "auto",
+    })
+<
+All fields are optional; the values shown above are the defaults.
+
+==============================================================================
+3. Configuration                                     *jjournal-configuration*
+
+                                                        *jjournal-config-path*
+path~
+    Type: `string`
+    Default: `"~/notes/journals/"`
+
+    Directory where journal entries are stored, one Markdown file per day
+    (`YYYY-MM-DD.md`). A trailing slash is optional.
+
+                                          *jjournal-config-use_default_mappings*
+use_default_mappings~
+    Type: `boolean`
+    Default: `true`
+
+    Whether to bind the default mappings listed in |jjournal-mappings|. Set
+    to `false` to define your own mappings against
+    `require("jjournal").execute()` (see |jjournal-api|) instead.
+
+                                                      *jjournal-config-search*
+search~
+    Type: `"auto"|"telescope"|"builtin"|function(path)`
+    Default: `"auto"`
+
+    Controls what the backlog search (|jjournal-search|) uses. See
+    |jjournal-search| for the full behavior of each value.
+
+==============================================================================
+4. Default mappings                                       *jjournal-mappings*
+
+Bound in normal mode when `use_default_mappings = true` (the default):
+
+    gj              Open today's journal entry.
+    gJ              Open today's journal entry in a vertical split.
+    [j              Jump to the previous existing journal entry (skips
+                    days with no entry).
+    ]j              Jump to the next existing journal entry (skips days
+                    with no entry).
+    [J              Like [j, opening in a vertical split.
+    ]J              Like ]j, opening in a vertical split.
+    <leader>jj      Prompt for a date and open it.
+    <leader>jJ      Prompt for a date and open it in a vertical split.
+    <leader>fj      Search the journal backlog. See |jjournal-search|.
+
+To disable a single mapping while keeping the rest, set it to `false` on
+`require("jjournal").mappings` before calling `setup()`: >lua
+
+    require("jjournal").mappings["gj"] = false
+    require("jjournal").setup({ use_default_mappings = true })
+<
+
+==============================================================================
+5. Search providers                                          *jjournal-search*
+
+`<leader>fj` (and `require("jjournal").execute("search")`) search the
+journal backlog. The `search` config option (|jjournal-config-search|)
+selects how:
+
+`"auto"` (default)
+    Uses telescope.nvim's `live_grep` if it's installed. Otherwise, falls
+    back to the builtin search below with no warning.
+
+`"telescope"`
+    Always uses telescope. Warns and falls back to the builtin search if
+    telescope isn't installed.
+
+`"builtin"`
+    Always uses Neovim's builtin |:vimgrep|: prompts for a search term,
+    greps the configured journal path recursively for `*.md` files, and
+    opens the results with |:copen|.
+
+a Lua function
+    Called directly as `function(path)`, where `path` is the configured
+    journal path. Use this to wire up any other picker (fzf-lua,
+    mini.pick, snacks.picker, etc.): >lua
+
+        require("jjournal").setup({
+          search = function(path)
+            require("fzf-lua").live_grep({ cwd = path })
+          end,
+        })
+<
+
+==============================================================================
+6. Lua API                                                      *jjournal-api*
+
+                                                            *jjournal.setup()*
+setup({opts})
+    Merges {opts} into the current config and (re-)binds mappings and
+    autocmds. See |jjournal-configuration| for available keys.
+
+                                                          *jjournal.execute()*
+execute({target}, {cmd})
+    Runs one of the mapping actions directly: {target} is one of "today",
+    "prev", "next", "prompt", or "search"; {cmd} is the Ex command used to
+    open the result (e.g. "edit" or "vsplit"), ignored for "search".
+
+                                                     *jjournal.resolve_date()*
+resolve_date({target}, {callback})
+    Resolves {target} ("today", "prev", "next", or "prompt") to a
+    `YYYY-MM-DD` string (or `nil`), passed to {callback}.
+
+                                                       *jjournal.open_date()*
+open_date({date_str}, {cmd})
+    Opens the journal entry for {date_str} with the Ex command {cmd}
+    (default `"edit"`). Warns and does nothing if {date_str} is `nil`.
+
+                                                   *jjournal.search_backlog()*
+search_backlog()
+    Runs the configured search provider. See |jjournal-search|.
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:

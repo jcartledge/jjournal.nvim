@@ -9,6 +9,7 @@
 
 # neovim
 .nvimlog
+/doc/tags
 
 # lua
 *.luac
