@@ -7,7 +7,7 @@ require("busted.runner")({
 	standalone = false,
 	coverage = true,
 	verbose = true,
-	lpath = "lua/?.lua;lua/?/init.lua",
+	lpath = "lua/?.lua;lua/?/init.lua;tests/?.lua;tests/?/init.lua",
 })
 
 local luacov = require("luacov.runner")

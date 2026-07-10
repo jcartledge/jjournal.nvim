@@ -18,6 +18,10 @@ package.path = root
 	.. "/lua/?.lua;"
 	.. root
 	.. "/lua/?/init.lua;"
+	.. root
+	.. "/tests/?.lua;"
+	.. root
+	.. "/tests/?/init.lua;"
 	.. rocks_tree
 	.. "/share/lua/"
 	.. lua_version
