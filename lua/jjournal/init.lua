@@ -127,9 +127,31 @@ local function calculate_target_index(files, current, direction)
   return target_index
 end
 
--- The Main Navigation Orchestrator
+-- Shifts a YYYY-MM-DD date string by `days` (may be negative). Anchored at
+-- noon rather than midnight so a +/- 86400 second shift can't land on the
+-- wrong calendar day across a DST transition (a 23- or 25-hour day).
+local function shift_date(date_str, days)
+  local year, month, day = date_str:match "(%d%d%d%d)%-(%d%d)%-(%d%d)"
+  local time = os.time { year = tonumber(year), month = tonumber(month), day = tonumber(day), hour = 12 }
+  return os.date("%Y-%m-%d", time + days * 86400)
+end
+
+-- The Main Navigation Orchestrator.
+--
+-- Shifting the current date by one day in the requested direction is the
+-- candidate destination. If that candidate is today or later, it's used
+-- directly -- stepping exactly one day at a time into today/the future, and
+-- opened whether or not a file exists for it yet (open_date already
+-- auto-creates missing directories). Only when the candidate is still
+-- before today does this fall back to skip-searching for the nearest
+-- existing entry in that direction, preserving history-browsing behavior.
 local function get_nav_date(direction)
   local current = get_current_date_coordinate()
+  local today = vim.fn.strftime "%F"
+  local candidate = shift_date(current, direction > 0 and 1 or -1)
+
+  if candidate >= today then return candidate end
+
   local files = get_all_available_dates()
   local target_index = calculate_target_index(files, current, direction)
 

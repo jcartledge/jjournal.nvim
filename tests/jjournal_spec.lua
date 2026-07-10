@@ -40,9 +40,17 @@ describe("jjournal.resolve_date", function()
 	-- configured journal path, so the path-scoping check in
 	-- get_current_date_coordinate treats it as the navigation anchor; only
 	-- fn (glob/expand) is what each of those specs is actually testing.
-	-- Override api.nvim_buf_get_name to move the buffer itself.
+	-- "Today" defaults to 2026-07-10 so the skip-search specs (where the
+	-- exact value is incidental -- any date safely after their fixture dates
+	-- would do) aren't relying on the real wall-clock date. Specs where
+	-- "today" is *material* to the expected result -- the step-branch specs,
+	-- where the assertion is literally "today" +/- 1 day, and the
+	-- year-boundary spec -- still pass fn.strftime explicitly, so the value
+	-- driving the assertion is visible in the spec itself, not hidden here.
+	-- Override api.nvim_buf_get_name to move the buffer.
 	local function setup_resolve_date_test(overrides, test_fn)
 		setup_test(vim.tbl_deep_extend("force", {
+			fn = { strftime = "2026-07-10" },
 			api = { nvim_buf_get_name = "/virtual/test/journal/path/current.md" },
 		}, overrides or {}), test_fn)
 	end
@@ -114,17 +122,19 @@ describe("jjournal.resolve_date", function()
 		end)
 	end)
 
+	-- Falling back to today (because the buffer is outside the journal path)
+	-- means "next" now steps directly to tomorrow, since today-or-later
+	-- always steps rather than skip-searching -- not because the outside-path
+	-- fallback itself changed, but because "next from today" now behaves
+	-- differently. No glob mock needed: the step branch never reaches disk
+	-- discovery.
 	it("falls back to today when the current buffer is date-named but outside the journal path", function()
 		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-02.md",
-				strftime = "2026-07-10",
-			},
+			fn = { strftime = "2026-07-10" },
 			api = { nvim_buf_get_name = "/some/other/notes/2026-06-02.md" },
 		}, function()
 			jjournal.resolve_date("next", function(resolved_date)
-				assert.is_nil(resolved_date)
+				assert.are.equal("2026-07-11", resolved_date)
 			end)
 		end)
 	end)
@@ -133,15 +143,11 @@ describe("jjournal.resolve_date", function()
 		-- "/virtual/test/journal/path-other" is NOT a descendant of
 		-- "/virtual/test/journal/path", even though it shares a string prefix.
 		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-02.md",
-				strftime = "2026-07-10",
-			},
+			fn = { strftime = "2026-07-10" },
 			api = { nvim_buf_get_name = "/virtual/test/journal/path-other/2026-06-02.md" },
 		}, function()
 			jjournal.resolve_date("next", function(resolved_date)
-				assert.is_nil(resolved_date)
+				assert.are.equal("2026-07-11", resolved_date)
 			end)
 		end)
 	end)
@@ -172,6 +178,50 @@ describe("jjournal.resolve_date", function()
 		}, function()
 			jjournal.resolve_date("next", function(resolved_date)
 				assert.are.equal("2026-06-03", resolved_date)
+			end)
+		end)
+	end)
+
+	-- Today-or-later always steps exactly one day and lands there directly,
+	-- whether or not a file exists yet -- never falling back to the
+	-- skip-search above. None of these need a glob mock: the step branch
+	-- returns before disk discovery is ever consulted.
+	it("steps forward to tomorrow directly when today or later, even with no file for it yet", function()
+		setup_resolve_date_test({
+			fn = { strftime = "2026-07-10", expand = "2026-07-10.md" },
+		}, function()
+			jjournal.resolve_date("next", function(resolved_date)
+				assert.are.equal("2026-07-11", resolved_date)
+			end)
+		end)
+	end)
+
+	it("steps backward to today directly when navigating prev from tomorrow", function()
+		setup_resolve_date_test({
+			fn = { strftime = "2026-07-10", expand = "2026-07-11.md" },
+		}, function()
+			jjournal.resolve_date("prev", function(resolved_date)
+				assert.are.equal("2026-07-10", resolved_date)
+			end)
+		end)
+	end)
+
+	it("steps directly to today when next from yesterday would land on today, without skip-searching", function()
+		setup_resolve_date_test({
+			fn = { strftime = "2026-07-10", expand = "2026-07-09.md" },
+		}, function()
+			jjournal.resolve_date("next", function(resolved_date)
+				assert.are.equal("2026-07-10", resolved_date)
+			end)
+		end)
+	end)
+
+	it("shifts correctly across a year boundary", function()
+		setup_resolve_date_test({
+			fn = { strftime = "2026-01-01", expand = "2025-12-31.md" },
+		}, function()
+			jjournal.resolve_date("next", function(resolved_date)
+				assert.are.equal("2026-01-01", resolved_date)
 			end)
 		end)
 	end)

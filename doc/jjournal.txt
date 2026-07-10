@@ -18,8 +18,8 @@ file named by date, nested under year/month directories by default (e.g.
 `2026/07/2026-07-09.md`), or laid out however you like via
 |jjournal-config-file_path|, inside a configured journal folder. It
 provides mappings to jump to today's entry, step to the previous/next
-existing entry, jump to an arbitrary date, and search across your journal
-backlog.
+entry (see |jjournal-mappings| for exactly what "step" means), jump to an
+arbitrary date, and search across your journal backlog.
 
 ==============================================================================
 2. Setup                                                    *jjournal-setup*
@@ -106,15 +106,20 @@ Bound in normal mode when `use_default_mappings = true` (the default):
 
     gj              Open today's journal entry.
     gJ              Open today's journal entry in a vertical split.
-    [j              Jump to the previous existing journal entry (skips
-                    days with no entry).
-    ]j              Jump to the next existing journal entry (skips days
-                    with no entry).
+    [j              Step to the previous day's entry.
+    ]j              Step to the next day's entry.
     [J              Like [j, opening in a vertical split.
     ]J              Like ]j, opening in a vertical split.
     <leader>jj      Prompt for a date and open it.
     <leader>jJ      Prompt for a date and open it in a vertical split.
     <leader>fj      Search the journal backlog. See |jjournal-search|.
+
+Stepping ([j/]j/[J/]J) shifts the current date by one day in that
+direction. If the shifted date is today or later, it opens that exact
+date directly, creating it if needed -- so you can step forward into
+blank future days to plan ahead, or back out of one. Otherwise (still
+before today), it skips to the nearest existing entry in that direction
+instead of opening blank historical days one at a time.
 
 To disable a single mapping while keeping the rest, set it to `false` on
 `require("jjournal").mappings` before calling `setup()`: >lua

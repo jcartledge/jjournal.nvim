@@ -15,7 +15,7 @@ require("jjournal").setup({
 })
 ```
 
-With `use_default_mappings = true` (the default), `gj` opens today's journal entry, `[j`/`]j` step to the previous/next existing entry, `<leader>jj` prompts for a date, and `<leader>fj` searches the backlog.
+With `use_default_mappings = true` (the default), `gj` opens today's journal entry, `[j`/`]j` step to the previous/next entry, `<leader>jj` prompts for a date, and `<leader>fj` searches the backlog.
 
 See `:help jjournal` for the full config reference, all default mappings, and how to customize backlog search.
 
