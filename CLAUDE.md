@@ -15,6 +15,10 @@ A story moves through these stages by moving its file: `spec/backlog/story-name.
 
 Every change should be tied to a story that is in `spec/doing/` at the time the change is made. If a change is needed and no story covers it, stop: create the story first (see the template below), move it into `spec/doing/`, and only then make the change. This applies to process and tooling changes in this repo (CLAUDE.md, tests, CI config, etc.) just as much as to plugin features — small or "obvious" changes aren't exempt.
 
+Adding new stories to `spec/backlog/` is exempt from this rule — planning isn't itself a change, so it can happen without a story of its own. This should usually happen when nothing is in `spec/doing/`. The exception: if the new stories are a direct byproduct of the story currently in `doing/` (an edge case being deferred, a bug spotted while implementing, a related future enhancement), they can be added to `spec/backlog/` while that story is still in progress.
+
+If new work clearly reworks or extends a story already in `spec/done/`, don't edit the delivered content describing what was already built. Instead, move the file back into `spec/doing/` and append a new section describing the changed requirement, then proceed as normal. This keeps one file as the running history of a piece of functionality — original delivery plus later revisions — rather than silently rewriting delivered history or spawning a disconnected duplicate story.
+
 Each story is one file, named descriptively in kebab-case (e.g. `configurable-journal-path-template.md`), and follows this template:
 
 ```markdown
