@@ -2,8 +2,9 @@ local jjournal = require("jjournal")
 local stub = require("luassert.stub")
 
 -- Configures jjournal against a virtual journal path, installs any requested
--- stubs, then calls jjournal.setup() and returns a cleanup function that
--- reverts them. Mocks are installed *before* setup() runs, so they also
+-- stubs, runs `test_fn`, then always reverts the stubs and restores config
+-- -- whether `test_fn` returns normally or raises an error (e.g. a failed
+-- assertion). Mocks are installed *before* setup() runs, so they also
 -- observe setup()'s own side effects (keymap binding, autocmd registration).
 --
 -- This is the only place that should create stubs: tests should describe
@@ -33,10 +34,17 @@ local stub = require("luassert.stub")
 -- into every later test that doesn't override it (not just the three
 -- listed above; any current or future config key). To keep tests isolated
 -- from each other regardless, this snapshots jjournal.config before
--- (re-)running setup(), and the returned cleanup restores that exact
--- snapshot -- undoing this test's config changes in full, not just the
+-- (re-)running setup(), and restores that exact snapshot once `test_fn`
+-- finishes -- undoing this test's config changes in full, not just the
 -- keys we happened to think to reset.
-local function setup_test(mocks)
+--
+-- Cleanup previously ran via a `cleanup` function this returned, which a
+-- test had to remember to call -- and skipped entirely if the test threw
+-- before reaching it, leaking stubs/config into every test that ran after.
+-- Taking the test body as `test_fn` instead makes cleanup unconditional: it
+-- always runs, even when `test_fn` errors, and the error is then re-raised
+-- so busted still reports the failure.
+local function setup_test(mocks, test_fn)
 	mocks = mocks or {}
 	local active_stubs = {}
 	local previous_config = vim.deepcopy(jjournal.config)
@@ -64,13 +72,14 @@ local function setup_test(mocks)
 		use_default_mappings = false,
 	}, mocks.config or {}))
 
-	return function()
-		jjournal.config = previous_config
+	local ok, err = pcall(test_fn)
 
-		for _, s in ipairs(active_stubs) do
-			s:revert()
-		end
+	jjournal.config = previous_config
+	for _, s in ipairs(active_stubs) do
+		s:revert()
 	end
+
+	if not ok then error(err, 0) end
 end
 
 return setup_test
