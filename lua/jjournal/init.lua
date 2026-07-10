@@ -3,7 +3,7 @@ local M = {}
 
 M.config = {
   base_dir = vim.fn.expand "~/notes/journals/",
-  file_path = "%Y-%m-%d.md",
+  file_path = "%Y/%m/%Y-%m-%d.md",
   use_default_mappings = true,
   search = "auto",
 }

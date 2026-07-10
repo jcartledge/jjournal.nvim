@@ -14,12 +14,12 @@ describe("jjournal config", function()
 		assert.is_true(fresh.config.use_default_mappings)
 	end)
 
-	it("defaults file_path to the flat 'YYYY-MM-DD.md' layout", function()
+	it("defaults file_path to nested year/month directories", function()
 		package.loaded["jjournal"] = nil
 		local fresh = require("jjournal")
 		package.loaded["jjournal"] = jjournal
 
-		assert.are.equal("%Y-%m-%d.md", fresh.config.file_path)
+		assert.are.equal("%Y/%m/%Y-%m-%d.md", fresh.config.file_path)
 	end)
 
 	it("normalizes a configured path that has no trailing slash", function()

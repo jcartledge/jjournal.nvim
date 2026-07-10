@@ -14,8 +14,9 @@ CONTENTS                                                  *jjournal-contents*
 1. Introduction                                      *jjournal-introduction*
 
 jjournal.nvim is a minimal daily journaling plugin. Each day is a single
-file named by date (e.g. `2026-07-09.md` by default, or nested/renamed per
-|jjournal-config-file_path|) inside a configured journal folder. It
+file named by date, nested under year/month directories by default (e.g.
+`2026/07/2026-07-09.md`), or laid out however you like via
+|jjournal-config-file_path|, inside a configured journal folder. It
 provides mappings to jump to today's entry, step to the previous/next
 existing entry, jump to an arbitrary date, and search across your journal
 backlog.
@@ -28,12 +29,18 @@ Call setup() once, typically from your plugin manager's config or
 
     require("jjournal").setup({
       base_dir = "~/notes/journals/",
-      file_path = "%Y-%m-%d.md",
+      file_path = "%Y/%m/%Y-%m-%d.md",
       use_default_mappings = true,
       search = "auto",
     })
 <
 All fields are optional; the values shown above are the defaults.
+
+If you have existing entries in the old flat `"%Y-%m-%d.md"` layout (the
+default before this version), either set `file_path = "%Y-%m-%d.md"`
+explicitly to keep them where they are, or move your existing files to
+match the new nested layout yourself (e.g. with `zmv` in zsh) before
+upgrading.
 
 ==============================================================================
 3. Configuration                                     *jjournal-configuration*
@@ -50,7 +57,7 @@ base_dir~
                                                    *jjournal-config-file_path*
 file_path~
     Type: `string`
-    Default: `"%Y-%m-%d.md"`
+    Default: `"%Y/%m/%Y-%m-%d.md"`
 
     Template for each entry's path, relative to `base_dir`, built from date
     placeholders:
