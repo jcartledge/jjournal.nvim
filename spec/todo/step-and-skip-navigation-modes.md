@@ -61,3 +61,54 @@ it("falls back to skip-search when the shifted date is still before today", func
     -- unchanged behavior, now with fn.strftime explicitly mocked well after the fixture dates
 end)
 ```
+
+## **Story: Replace today-relative step/skip with two explicit navigation modes**
+
+**Use Case:** The fork above is decided by *destination relative to today*, which is exactly why it took real effort to trust it was behaving correctly in practice ("the UX might take a little getting used to... I had to convince myself it was working correctly"): the same keypress does one of two different things depending on where you currently are, with no visible signal which one just happened. Splitting this into two explicit, orthogonal, always-consistent primitives removes that ambiguity entirely: **step** always shifts by exactly one day (or N with a count — see `support-count-prefix-step-navigation.md`), creating the entry as needed, in either direction, regardless of today. **Skip** always jumps to the nearest existing entry (or Nth with a count), in either direction, regardless of today. Today stops being special-cased in the navigation logic at all.
+
+New default mappings (replacing `[j`/`]j`/`[J`/`]J` now that split variants are gone entirely — see `split-window-navigation-mappings.md`):
+
+* `[jj` / `]jj` — step: shift exactly one day back/forward, creating the entry if needed, regardless of past or future.
+* `[j` / `]j` — skip: jump to the nearest existing entry back/forward, regardless of past or future.
+
+This is a deliberate pre-release breaking change to both the default mappings and to `dates.get_nav_date`'s behavior — no more today-relative branching anywhere in the navigation logic.
+
+### **Acceptance Criteria**
+
+* **Given** `]jj`/`[jj` (step),
+* **When** triggered from any date, past or future,
+* **Then** it shifts exactly one calendar day in that direction and opens it, creating the entry if it doesn't exist — never skip-searching, regardless of whether the result lands before or after today.
+
+* **Given** `]j`/`[j` (skip),
+* **When** triggered from any date, past or future,
+* **Then** it jumps to the nearest existing entry (on disk or in an open buffer) in that direction — never stepping into a blank day, regardless of whether the result lands before or after today.
+
+* **Given** `dates.lua`,
+* **When** this lands,
+* **Then** `get_nav_date`'s today-relative branch is removed entirely, replaced with two separate, simpler functions with no dependency on "today" at all (naming TBD, see "Open questions").
+
+* **Given** the worked examples and today-relative language in this file's original section above,
+* **When** this lands,
+* **Then** that section is superseded, not deleted — it stays as the historical record of what was built first; this section documents the replacement.
+
+### **Open questions — need deciding when this is picked up**
+
+* Naming for the two new `dates.lua` functions — `step`/`skip`, matching the mapping vocabulary already agreed on, or something else?
+
+### **Busted Test Cases**
+
+```
+it("steps back or forward exactly one day regardless of whether the result lands before today", function()
+end)
+
+it("skips to the nearest existing entry regardless of whether the result lands before today", function()
+end)
+
+it("skip resolves to nil when there is no existing entry in that direction", function()
+    -- matches today's existing "no later entry" behavior, now unconditional
+end)
+```
+
+All specs currently in this file's original "Busted Test Cases" section (the today-relative step/skip fork) get replaced outright, not adapted, since the fork they test no longer exists — kept above as historical record of what shipped first.
+
+Once this lands, `support-count-prefix-step-navigation.md` will need its own naming/reference update: it currently refers to `[j`/`]j`/`[J`/`]J` and the today-relative branching, both of which this story removes. Its core acceptance criteria (count generalizes step to N days, ignored for today/prompt/search) still hold, and the "open question" about past-direction ambiguity is resolved rather than left open — a count now unambiguously means N for either mode.
