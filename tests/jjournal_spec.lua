@@ -229,6 +229,19 @@ describe("jjournal.execute", function()
 
 		cleanup()
 	end)
+
+	it("prompts for a date and opens it in a vsplit for the 'prompt' target", function()
+		local cleanup = setup_test({
+			ui = { input = function(_, callback) callback("2026-07-09") end },
+			vim = { cmd = true },
+		})
+
+		jjournal.execute("prompt", "vsplit")
+
+		assert.stub(vim.cmd).was_called_with("vsplit /virtual/test/journal/path/2026-07-09.md")
+
+		cleanup()
+	end)
 end)
 
 describe("jjournal.setup", function()
@@ -241,6 +254,13 @@ describe("jjournal.setup", function()
 		assert.is_true(jjournal.config.use_default_mappings)
 
 		cleanup()
+	end)
+
+	it("includes a <leader>jJ mapping that prompts for a date and opens it in a vsplit", function()
+		assert.are.same(
+			{ target = "prompt", cmd = "vsplit", desc = "Jump to journal date (split)" },
+			jjournal.mappings["<leader>jJ"]
+		)
 	end)
 
 	it("binds every default mapping in normal mode, wired to execute the right target/cmd, with its desc", function()

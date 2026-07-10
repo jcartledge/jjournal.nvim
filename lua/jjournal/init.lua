@@ -195,6 +195,7 @@ M.mappings = {
   ["<leader>fj"] = { target = "search", cmd = "grep", desc = "Search journal backlog (grep)" },
 
   ["<leader>jj"] = { target = "prompt", cmd = "edit", desc = "Jump to journal date" },
+  ["<leader>jJ"] = { target = "prompt", cmd = "vsplit", desc = "Jump to journal date (split)" },
 }
 
 M.setup = function(opts)

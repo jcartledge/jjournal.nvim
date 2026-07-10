@@ -18,7 +18,7 @@ require("jjournal").setup({
 })
 ```
 
-Default keymaps (when `use_default_mappings = true`): `gj`/`gJ` open today's journal (split), `[j`/`]j` and `[J`/`]J` step to the previous/next journal (split), `<leader>jj` prompts for a date, `<leader>fj` greps the journal backlog via Telescope.
+Default keymaps (when `use_default_mappings = true`): `gj`/`gJ` open today's journal (split), `[j`/`]j` and `[J`/`]J` step to the previous/next journal (split), `<leader>jj`/`<leader>jJ` prompt for a date (split), `<leader>fj` greps the journal backlog via Telescope.
 
 ## Developing
 
