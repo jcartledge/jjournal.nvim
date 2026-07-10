@@ -14,10 +14,11 @@ CONTENTS                                                  *jjournal-contents*
 1. Introduction                                      *jjournal-introduction*
 
 jjournal.nvim is a minimal daily journaling plugin. Each day is a single
-Markdown file named by date (e.g. `2026-07-09.md`) inside a configured
-journal folder. It provides mappings to jump to today's entry, step to the
-previous/next existing entry, jump to an arbitrary date, and search across
-your journal backlog.
+file named by date (e.g. `2026-07-09.md` by default, or nested/renamed per
+|jjournal-config-file_path|) inside a configured journal folder. It
+provides mappings to jump to today's entry, step to the previous/next
+existing entry, jump to an arbitrary date, and search across your journal
+backlog.
 
 ==============================================================================
 2. Setup                                                    *jjournal-setup*
@@ -26,7 +27,8 @@ Call setup() once, typically from your plugin manager's config or
 `init.lua`: >lua
 
     require("jjournal").setup({
-      path = "~/notes/journals/",
+      base_dir = "~/notes/journals/",
+      file_path = "%Y-%m-%d.md",
       use_default_mappings = true,
       search = "auto",
     })
@@ -36,13 +38,42 @@ All fields are optional; the values shown above are the defaults.
 ==============================================================================
 3. Configuration                                     *jjournal-configuration*
 
-                                                        *jjournal-config-path*
-path~
+                                                    *jjournal-config-base_dir*
+base_dir~
     Type: `string`
     Default: `"~/notes/journals/"`
 
-    Directory where journal entries are stored, one Markdown file per day
-    (`YYYY-MM-DD.md`). A trailing slash is optional.
+    Root directory where journal entries are stored. A trailing slash is
+    optional. Where each entry lives beneath this root is controlled by
+    |jjournal-config-file_path|.
+
+                                                   *jjournal-config-file_path*
+file_path~
+    Type: `string`
+    Default: `"%Y-%m-%d.md"`
+
+    Template for each entry's path, relative to `base_dir`, built from date
+    placeholders:
+
+        %Y      4-digit year, e.g. `2026`
+        %m      2-digit month, e.g. `07`
+        %d      2-digit day of month, e.g. `09`
+        %D      shorthand for the full date, i.e. `%Y-%m-%d`
+
+    `/` in the template creates nested directories (created automatically
+    when an entry is first opened). For example: >lua
+
+        file_path = "%Y/%m/%Y-%m-%d.md"    -- nested by year/month
+        file_path = "%Y/%m/%d/journal-%D.txt"  -- year/month/day dirs,
+                                                -- descriptive filename
+<
+    Navigation ([j, ]j, etc.) identifies each file's date by extracting a
+    `YYYY-MM-DD` substring from its filename alone, so the filename portion
+    of the template (the segment after the last `/`) must contain either
+    `%D` or the literal sequence `%Y-%m-%d`, written in that order. Any
+    prefix, suffix, or extension around it is fine (or none); `setup()`
+    raises an error if this isn't satisfiable, e.g. `"%Y/%m/%d.md"` (day
+    only, no full date in the filename) is invalid.
 
                                           *jjournal-config-use_default_mappings*
 use_default_mappings~
@@ -55,7 +86,7 @@ use_default_mappings~
 
                                                       *jjournal-config-search*
 search~
-    Type: `"auto"|"telescope"|"builtin"|function(path)`
+    Type: `"auto"|"telescope"|"builtin"|function(base_dir)`
     Default: `"auto"`
 
     Controls what the backlog search (|jjournal-search|) uses. See
@@ -102,17 +133,18 @@ selects how:
 
 `"builtin"`
     Always uses Neovim's builtin |:vimgrep|: prompts for a search term,
-    greps the configured journal path recursively for `*.md` files, and
-    opens the results with |:copen|.
+    greps the configured journal base_dir recursively for files matching
+    the extension configured via |jjournal-config-file_path| (`*.md` by
+    default), and opens the results with |:copen|.
 
 a Lua function
-    Called directly as `function(path)`, where `path` is the configured
-    journal path. Use this to wire up any other picker (fzf-lua,
-    mini.pick, snacks.picker, etc.): >lua
+    Called directly as `function(base_dir)`, where `base_dir` is the
+    configured journal root. Use this to wire up any other picker
+    (fzf-lua, mini.pick, snacks.picker, etc.): >lua
 
         require("jjournal").setup({
-          search = function(path)
-            require("fzf-lua").live_grep({ cwd = path })
+          search = function(base_dir)
+            require("fzf-lua").live_grep({ cwd = base_dir })
           end,
         })
 <
@@ -140,6 +172,11 @@ resolve_date({target}, {callback})
 open_date({date_str}, {cmd})
     Opens the journal entry for {date_str} with the Ex command {cmd}
     (default `"edit"`). Warns and does nothing if {date_str} is `nil`.
+
+                                                     *jjournal.resolve_path()*
+resolve_path({date_str})
+    Resolves {date_str} (a `YYYY-MM-DD` string) to its full file path, per
+    |jjournal-config-base_dir| and |jjournal-config-file_path|.
 
                                                    *jjournal.search_backlog()*
 search_backlog()

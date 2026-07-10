@@ -22,10 +22,24 @@ local stub = require("luassert.stub")
 -- A mock value may be a fixed return value or a function; luassert.stub
 -- invokes it as the implementation when the value is callable.
 --
--- `config` overrides the path/use_default_mappings passed to setup().
+-- `config` overrides the base_dir/file_path/use_default_mappings passed to
+-- setup(). Those three are always explicitly (re-)passed here so every test
+-- starts from the same known fixture values, regardless of what a previous
+-- test configured.
+--
+-- jjournal.setup() merges into the *existing* jjournal.config rather than
+-- replacing it, and jjournal.config is a module-level table that persists
+-- across tests -- so on its own, merging would let any key a test sets leak
+-- into every later test that doesn't override it (not just the three
+-- listed above; any current or future config key). To keep tests isolated
+-- from each other regardless, this snapshots jjournal.config before
+-- (re-)running setup(), and the returned cleanup restores that exact
+-- snapshot -- undoing this test's config changes in full, not just the
+-- keys we happened to think to reset.
 local function setup_test(mocks)
 	mocks = mocks or {}
 	local active_stubs = {}
+	local previous_config = vim.deepcopy(jjournal.config)
 
 	local function stub_namespace(target, entries)
 		for key, value in pairs(entries or {}) do
@@ -45,11 +59,14 @@ local function setup_test(mocks)
 	end
 
 	jjournal.setup(vim.tbl_extend("force", {
-		path = "/virtual/test/journal/path/",
+		base_dir = "/virtual/test/journal/path/",
+		file_path = "%Y-%m-%d.md",
 		use_default_mappings = false,
 	}, mocks.config or {}))
 
 	return function()
+		jjournal.config = previous_config
+
 		for _, s in ipairs(active_stubs) do
 			s:revert()
 		end

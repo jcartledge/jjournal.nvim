@@ -10,13 +10,21 @@ describe("jjournal config", function()
 		local fresh = require("jjournal")
 		package.loaded["jjournal"] = jjournal -- restore the shared instance used by the rest of the suite
 
-		assert.are.equal(vim.fn.expand("~/notes/journals/"), fresh.config.path)
+		assert.are.equal(vim.fn.expand("~/notes/journals/"), fresh.config.base_dir)
 		assert.is_true(fresh.config.use_default_mappings)
+	end)
+
+	it("defaults file_path to the flat 'YYYY-MM-DD.md' layout", function()
+		package.loaded["jjournal"] = nil
+		local fresh = require("jjournal")
+		package.loaded["jjournal"] = jjournal
+
+		assert.are.equal("%Y-%m-%d.md", fresh.config.file_path)
 	end)
 
 	it("normalizes a configured path that has no trailing slash", function()
 		local cleanup = setup_test({
-			config = { path = "/virtual/test/no-trailing-slash" },
+			config = { base_dir = "/virtual/test/no-trailing-slash" },
 			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		})
@@ -33,7 +41,7 @@ describe("jjournal.resolve_date", function()
 	-- Chronological-stepping specs need the current buffer to be inside the
 	-- configured journal path, so the path-scoping check in
 	-- get_current_date_coordinate treats it as the navigation anchor; only
-	-- fn (readdir/expand) is what each of those specs is actually testing.
+	-- fn (glob/expand) is what each of those specs is actually testing.
 	-- Override api.nvim_buf_get_name to move the buffer itself.
 	local function setup_resolve_date_test(overrides)
 		return setup_test(vim.tbl_deep_extend("force", {
@@ -55,7 +63,7 @@ describe("jjournal.resolve_date", function()
 	it("resolves 'next' by stepping forward across empty days to the next existing entry", function()
 		local cleanup = setup_resolve_date_test({
 			fn = {
-				readdir = { "2026-06-01.md", "2026-06-03.md" },
+				glob = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-01.md",
 			},
 		})
@@ -70,7 +78,7 @@ describe("jjournal.resolve_date", function()
 	it("prioritizes virtual unwritten buffers over disk storage when resolving 'next'", function()
 		local cleanup = setup_resolve_date_test({
 			fn = {
-				readdir = { "2026-06-01.md", "2026-06-03.md" },
+				glob = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-01.md",
 			},
 			api = {
@@ -90,7 +98,7 @@ describe("jjournal.resolve_date", function()
 	it("resolves 'next' to nil when there is no later entry", function()
 		local cleanup = setup_resolve_date_test({
 			fn = {
-				readdir = { "2026-06-01.md", "2026-06-02.md" },
+				glob = { "2026-06-01.md", "2026-06-02.md" },
 				expand = "2026-06-02.md",
 			},
 		})
@@ -105,7 +113,7 @@ describe("jjournal.resolve_date", function()
 	it("resolves 'prev' by stepping backward across empty days to the previous existing entry", function()
 		local cleanup = setup_resolve_date_test({
 			fn = {
-				readdir = { "2026-06-01.md", "2026-06-03.md" },
+				glob = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-03.md",
 			},
 		})
@@ -120,7 +128,7 @@ describe("jjournal.resolve_date", function()
 	it("falls back to today when the current buffer is date-named but outside the journal path", function()
 		local cleanup = setup_resolve_date_test({
 			fn = {
-				readdir = { "2026-06-01.md", "2026-06-03.md" },
+				glob = { "2026-06-01.md", "2026-06-03.md" },
 				expand = "2026-06-02.md",
 				strftime = "2026-07-10",
 			},
@@ -129,6 +137,59 @@ describe("jjournal.resolve_date", function()
 
 		jjournal.resolve_date("next", function(resolved_date)
 			assert.is_nil(resolved_date)
+		end)
+
+		cleanup()
+	end)
+
+	it("falls back to today when the buffer's directory merely shares a name prefix with the journal path", function()
+		-- "/virtual/test/journal/path-other" is NOT a descendant of
+		-- "/virtual/test/journal/path", even though it shares a string prefix.
+		local cleanup = setup_resolve_date_test({
+			fn = {
+				glob = { "2026-06-01.md", "2026-06-03.md" },
+				expand = "2026-06-02.md",
+				strftime = "2026-07-10",
+			},
+			api = { nvim_buf_get_name = "/virtual/test/journal/path-other/2026-06-02.md" },
+		})
+
+		jjournal.resolve_date("next", function(resolved_date)
+			assert.is_nil(resolved_date)
+		end)
+
+		cleanup()
+	end)
+
+	it("treats a buffer nested under a subdirectory of the journal path as inside it", function()
+		local cleanup = setup_resolve_date_test({
+			fn = {
+				glob = { "2026-06-01.md", "2026-06-03.md" },
+				expand = "2026-06-01.md",
+			},
+			api = { nvim_buf_get_name = "/virtual/test/journal/path/2026/06/2026-06-01.md" },
+		})
+
+		jjournal.resolve_date("next", function(resolved_date)
+			assert.are.equal("2026-06-03", resolved_date)
+		end)
+
+		cleanup()
+	end)
+
+	it("discovers nested, non-.md journal files by extracting the date from an arbitrary filename", function()
+		local cleanup = setup_resolve_date_test({
+			fn = {
+				glob = {
+					"/virtual/test/journal/path/2026/06/journal-2026-06-01.txt",
+					"/virtual/test/journal/path/2026/06/journal-2026-06-03.txt",
+				},
+				expand = "journal-2026-06-01.txt",
+			},
+		})
+
+		jjournal.resolve_date("next", function(resolved_date)
+			assert.are.equal("2026-06-03", resolved_date)
 		end)
 
 		cleanup()
@@ -145,6 +206,35 @@ describe("jjournal.resolve_date", function()
 		end)
 
 		assert.are.equal("2026-07-09", received)
+
+		cleanup()
+	end)
+end)
+
+describe("jjournal.resolve_path", function()
+	it("resolves the default template the same as the previous flat layout", function()
+		local cleanup = setup_test()
+
+		assert.are.equal("/virtual/test/journal/path/2026-07-09.md", jjournal.resolve_path("2026-07-09"))
+
+		cleanup()
+	end)
+
+	it("resolves %Y/%m/%d placeholders against a nested template", function()
+		local cleanup = setup_test({ config = { file_path = "%Y/%m/%Y-%m-%d.md" } })
+
+		assert.are.equal("/virtual/test/journal/path/2026/07/2026-07-09.md", jjournal.resolve_path("2026-07-09"))
+
+		cleanup()
+	end)
+
+	it("resolves %D as shorthand for the full date alongside individual %Y/%m/%d tokens", function()
+		local cleanup = setup_test({ config = { file_path = "%Y/%m/%d/journal-%D.txt" } })
+
+		assert.are.equal(
+			"/virtual/test/journal/path/2026/07/09/journal-2026-07-09.txt",
+			jjournal.resolve_path("2026-07-09")
+		)
 
 		cleanup()
 	end)
@@ -209,6 +299,16 @@ describe("jjournal.open_date", function()
 		jjournal.open_date("2026-07-09")
 
 		assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
+
+		cleanup()
+	end)
+
+	it("opens the file at the path resolved from a custom nested file_path", function()
+		local cleanup = setup_open_date_test({ config = { file_path = "%Y/%m/%Y-%m-%d.md" } })
+
+		jjournal.open_date("2026-07-09", "edit")
+
+		assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026/07/2026-07-09.md")
 
 		cleanup()
 	end)
@@ -336,6 +436,20 @@ describe("jjournal.search_backlog", function()
 		cleanup()
 	end)
 
+	it("scopes the builtin vimgrep recursively to the extension configured via file_path", function()
+		local cleanup = setup_test({
+			config = { search = "builtin", file_path = "%Y/%m/%d/journal-%D.txt" },
+			ui = { input = function(_, callback) callback("todo") end },
+			vim = { cmd = true },
+		})
+
+		jjournal.search_backlog()
+
+		assert.stub(vim.cmd).was_called_with("vimgrep /todo/gj /virtual/test/journal/path/**/*.txt")
+
+		cleanup()
+	end)
+
 	it("escapes slashes in the search term before building the vimgrep pattern", function()
 		local cleanup = setup_test({
 			config = { search = "builtin" },
@@ -451,7 +565,7 @@ describe("jjournal.setup", function()
 
 		jjournal.setup({ use_default_mappings = true })
 
-		assert.are.equal("/virtual/test/journal/path/", jjournal.config.path)
+		assert.are.equal("/virtual/test/journal/path/", jjournal.config.base_dir)
 		assert.is_true(jjournal.config.use_default_mappings)
 
 		cleanup()
@@ -517,28 +631,58 @@ describe("jjournal.setup", function()
 		cleanup()
 	end)
 
+	describe("file_path validation", function()
+		it("errors when the filename portion has no way to recover the full date", function()
+			assert.has_error(function()
+				setup_test({ config = { file_path = "%Y/%m/%d.md" } })
+			end)
+		end)
+
+		it("accepts a filename containing the literal %Y-%m-%d with an arbitrary prefix/suffix and extension", function()
+			local cleanup = setup_test({ config = { file_path = "%Y/%m/notes-%Y-%m-%d-final.txt" } })
+			cleanup()
+		end)
+
+		it("accepts a filename containing %D as shorthand for the full date", function()
+			local cleanup = setup_test({ config = { file_path = "%Y/%m/%d/journal-%D.txt" } })
+			cleanup()
+		end)
+	end)
+
 	describe("journal buffer status autocmd", function()
-		local function capture_autocmd_callback()
+		local function capture_autocmd_callback(overrides)
 			local captured
-			local cleanup = setup_test({
+			local cleanup = setup_test(vim.tbl_deep_extend("force", {
 				api = {
 					nvim_create_autocmd = function(_, opts)
 						captured = opts.callback
 					end,
 				},
-			})
+			}, overrides or {}))
 			cleanup()
 			return captured
 		end
 
-		it("registers a BufReadPost/BufNewFile autocmd scoped to the configured journal path", function()
+		it("registers a BufReadPost/BufNewFile autocmd scoped recursively to the configured journal path", function()
 			local cleanup = setup_test({ api = { nvim_create_autocmd = true } })
 
 			assert.stub(vim.api.nvim_create_autocmd).was_called(1)
 			local events = vim.api.nvim_create_autocmd.calls[1].vals[1]
 			local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
 			assert.are.same({ "BufReadPost", "BufNewFile" }, events)
-			assert.are.equal("/virtual/test/journal/path/*.md", opts.pattern)
+			assert.are.equal("/virtual/test/journal/path/**/*.md", opts.pattern)
+
+			cleanup()
+		end)
+
+		it("scopes the autocmd pattern recursively to the extension configured via file_path", function()
+			local cleanup = setup_test({
+				api = { nvim_create_autocmd = true },
+				config = { file_path = "%Y/%m/%d/journal-%D.txt" },
+			})
+
+			local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
+			assert.are.equal("/virtual/test/journal/path/**/*.txt", opts.pattern)
 
 			cleanup()
 		end)
@@ -573,6 +717,24 @@ describe("jjournal.setup", function()
 			callback({ buf = buf })
 
 			assert.are.equal("archive", vim.b[buf].journal_status)
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+			cleanup()
+		end)
+
+		it("resolves today's path via a custom nested file_path when flagging status", function()
+			local nested_template = "%Y/%m/%Y-%m-%d.md"
+			local callback = capture_autocmd_callback({ config = { file_path = nested_template } })
+			local cleanup = setup_test({
+				config = { file_path = nested_template },
+				fn = { strftime = "2026-07-10" },
+				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026/07/2026-07-10.md" },
+			})
+			local buf = vim.api.nvim_create_buf(false, true)
+
+			callback({ buf = buf })
+
+			assert.are.equal("today", vim.b[buf].journal_status)
 
 			vim.api.nvim_buf_delete(buf, { force = true })
 			cleanup()

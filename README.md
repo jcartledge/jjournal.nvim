@@ -8,9 +8,10 @@ Requires Neovim. Point your plugin manager at this repo, then call setup:
 
 ```lua
 require("jjournal").setup({
-  path = "~/notes/journals/", -- default
+  base_dir = "~/notes/journals/", -- default
+  file_path = "%Y-%m-%d.md", -- default; %Y/%m/%d/%D placeholders, e.g. "%Y/%m/%Y-%m-%d.md"
   use_default_mappings = true,
-  search = "auto", -- "auto" | "telescope" | "builtin" | function(path)
+  search = "auto", -- "auto" | "telescope" | "builtin" | function(base_dir)
 })
 ```
 

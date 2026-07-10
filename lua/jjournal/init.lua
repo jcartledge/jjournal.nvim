@@ -2,14 +2,46 @@
 local M = {}
 
 M.config = {
-  path = vim.fn.expand "~/notes/journals/",
+  base_dir = vim.fn.expand "~/notes/journals/",
+  file_path = "%Y-%m-%d.md",
   use_default_mappings = true,
   search = "auto",
 }
 
-local function get_path()
-  local path = M.config.path
-  return path:sub(-1) == "/" and path or path .. "/"
+local function get_base_dir()
+  local base_dir = M.config.base_dir
+  return base_dir:sub(-1) == "/" and base_dir or base_dir .. "/"
+end
+
+-- Extracts the embedded YYYY-MM-DD date from anywhere within a filename,
+-- so journal files may have any prefix, suffix, or extension around the
+-- full date (e.g. "journal-2026-07-09.txt"), not just an exact
+-- "YYYY-MM-DD.md" name.
+local function extract_date_from_filename(filename)
+  return filename:match "%d%d%d%d%-%d%d%-%d%d"
+end
+
+-- Returns the filename portion (segment after the last "/") of a file_path.
+local function file_path_filename(file_path)
+  return file_path:match "([^/]+)$" or file_path
+end
+
+-- Derives the extension (including the leading ".") from file_path's
+-- filename portion, so recursive glob patterns and search stay scoped to
+-- whatever extension the user's file_path actually uses, instead of a
+-- hardcoded ".md".
+local function file_path_extension(file_path)
+  return file_path_filename(file_path):match "(%.[^.]+)$" or ""
+end
+
+-- Expands a file_path template against a resolved YYYY-MM-DD date string.
+-- %D is shorthand for the full date and is expanded first (as a plain
+-- substitution, not a placeholder-of-placeholders), then %Y/%m/%d are
+-- substituted individually so they may still be used on their own
+-- (e.g. for directory nesting) alongside %D.
+local function expand_file_path(file_path, date_str)
+  local year, month, day = date_str:match "(%d%d%d%d)%-(%d%d)%-(%d%d)"
+  return (file_path:gsub("%%D", date_str):gsub("%%Y", year):gsub("%%m", month):gsub("%%d", day))
 end
 
 -- ========================================================================
@@ -17,29 +49,31 @@ end
 -- ========================================================================
 
 -- Pinpoints the current YYYY-MM-DD anchor string based on the active window context.
--- Only trusts the buffer's own name if it actually lives inside the configured
--- journal path -- an unrelated date-named file elsewhere shouldn't be treated
--- as the navigation anchor.
+-- Only trusts the buffer's own name if it actually lives inside (at or below)
+-- the configured journal base_dir -- an unrelated date-named file elsewhere
+-- shouldn't be treated as the navigation anchor.
 local function get_current_date_coordinate()
   local buf_name = vim.api.nvim_buf_get_name(0)
-  local current = vim.fn.expand "%:t"
-  if current == "" then current = vim.fn.fnamemodify(buf_name, ":t") end
+  local tail = vim.fn.expand "%:t"
+  if tail == "" then tail = vim.fn.fnamemodify(buf_name, ":t") end
 
   local buf_dir = vim.fn.fnamemodify(buf_name, ":p:h")
-  local journal_dir = vim.fn.fnamemodify(get_path(), ":p"):gsub("/$", "")
+  local journal_dir = vim.fn.fnamemodify(get_base_dir(), ":p"):gsub("/$", "")
+  local inside_journal_path = buf_dir == journal_dir or buf_dir:sub(1, #journal_dir + 1) == journal_dir .. "/"
 
-  if buf_dir ~= journal_dir or not current:match "%d%d%d%d%-%d%d%-%d%d" then
-    return vim.fn.strftime "%F" .. ".md"
-  end
-  return current
+  local date = inside_journal_path and extract_date_from_filename(tail)
+  return date or vim.fn.strftime "%F"
 end
 
--- Collects all valid journal files physically written to the storage directory
+-- Collects all valid journal files physically written to the storage
+-- directory, recursing into subdirectories so nested file_paths are
+-- discovered. Each match contributes its bare YYYY-MM-DD date, not its
+-- literal filename, since the filename may carry any prefix/suffix/extension.
 local function get_dates_from_disk(date_set)
-  local folder = get_path()
-  local disk_files = vim.fn.readdir(folder)
-  for _, filename in ipairs(disk_files) do
-    if filename:match "^%d%d%d%d%-%d%d%-%d%d%.md$" then date_set[filename] = true end
+  local matches = vim.fn.glob(get_base_dir() .. "**/*", false, true)
+  for _, full_path in ipairs(matches) do
+    local date = extract_date_from_filename(vim.fn.fnamemodify(full_path, ":t"))
+    if date then date_set[date] = true end
   end
 end
 
@@ -49,8 +83,8 @@ local function get_dates_from_buffers(date_set)
   for _, buf in ipairs(active_buffers) do
     if vim.api.nvim_buf_is_loaded(buf) then
       local buf_name = vim.api.nvim_buf_get_name(buf)
-      local filename = vim.fn.fnamemodify(buf_name, ":t")
-      if filename:match "^%d%d%d%d%-%d%d%-%d%d%.md$" then date_set[filename] = true end
+      local date = extract_date_from_filename(vim.fn.fnamemodify(buf_name, ":t"))
+      if date then date_set[date] = true end
     end
   end
 end
@@ -99,8 +133,7 @@ local function get_nav_date(direction)
   local files = get_all_available_dates()
   local target_index = calculate_target_index(files, current, direction)
 
-  local target_file = files[target_index]
-  return target_file and target_file:gsub("%.md$", "") or nil
+  return files[target_index]
 end
 
 -- ========================================================================
@@ -128,6 +161,13 @@ M.resolve_date = function(target, callback)
   end
 end
 
+-- Resolves a YYYY-MM-DD date string to its full file path, per
+-- config.base_dir and config.file_path. Used uniformly by open_date and by
+-- the today/archive autocmd, so both agree on where a given date lives.
+M.resolve_path = function(date_str)
+  return get_base_dir() .. expand_file_path(M.config.file_path, date_str)
+end
+
 -- ========================================================================
 -- 2. ATOM 2: THE ACTION OPENER (Pure File System Execution)
 -- ========================================================================
@@ -137,7 +177,7 @@ M.open_date = function(date_str, cmd)
     return
   end
 
-  local full_path = get_path() .. date_str .. ".md"
+  local full_path = M.resolve_path(date_str)
   local dir = vim.fn.fnamemodify(full_path, ":h")
   if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
 
@@ -149,24 +189,25 @@ local function has_telescope()
   return pcall(require, "telescope.builtin")
 end
 
--- Prompts for a search term, then greps the configured journal path with
+-- Prompts for a search term, then greps the configured journal base_dir with
 -- Vim's builtin :vimgrep and opens the results in the quickfix list. Used
 -- directly when config.search = "builtin", and as the fallback when
 -- telescope isn't available.
-local function builtin_search(path)
+local function builtin_search(base_dir)
   vim.ui.input({ prompt = "Search journal for: " }, function(term)
     if not term or term == "" then return end
 
     local pattern = vim.fn.escape(term, "/\\")
-    vim.cmd(string.format("vimgrep /%s/gj %s**/*.md", pattern, path))
+    local ext = file_path_extension(M.config.file_path)
+    vim.cmd(string.format("vimgrep /%s/gj %s**/*%s", pattern, base_dir, ext))
     vim.cmd "copen"
   end)
 end
 
 M.search_providers = {
-  telescope = function(path)
+  telescope = function(base_dir)
     require("telescope.builtin").live_grep {
-      search_dirs = { path },
+      search_dirs = { base_dir },
       prompt_title = "Search Journal Backlog",
     }
   end,
@@ -175,12 +216,12 @@ M.search_providers = {
 
 -- config.search defaults to "auto" (telescope if available, otherwise the
 -- builtin vimgrep-based search). It can also be "telescope" or "builtin"
--- explicitly, or a function(path) for any other picker.
+-- explicitly, or a function(base_dir) for any other picker.
 M.search_backlog = function()
   local choice = M.config.search
 
   if type(choice) == "function" then
-    choice(get_path())
+    choice(get_base_dir())
     return
   end
 
@@ -201,7 +242,7 @@ M.search_backlog = function()
     return
   end
 
-  provider(get_path())
+  provider(get_base_dir())
 end
 
 -- ========================================================================
@@ -232,11 +273,11 @@ end
 local function register_autocmds()
   vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
     group = vim.api.nvim_create_augroup("JournalEngineCore", { clear = true }),
-    pattern = get_path() .. "*.md",
+    pattern = get_base_dir() .. "**/*" .. file_path_extension(M.config.file_path),
     callback = function(args)
       local current_buf = args.buf
       local current_path = vim.api.nvim_buf_get_name(current_buf)
-      local today_path = get_path() .. vim.fn.strftime "%F" .. ".md"
+      local today_path = M.resolve_path(vim.fn.strftime "%F")
 
       if vim.fn.fnamemodify(current_path, ":p") == vim.fn.fnamemodify(today_path, ":p") then
         vim.b[current_buf].journal_status = "today"
@@ -263,8 +304,27 @@ M.mappings = {
   ["<leader>jJ"] = { target = "prompt", cmd = "vsplit", desc = "Jump to journal date (split)" },
 }
 
+-- Navigation identifies a file's date by extracting a YYYY-MM-DD substring
+-- from its filename alone (see extract_date_from_filename), so the
+-- filename portion of file_path must guarantee one is recoverable: either
+-- the composite %D token, or the literal %Y-%m-%d sequence written out
+-- (any prefix, suffix, or extension around it is fine).
+local function validate_file_path(file_path)
+  local filename = file_path_filename(file_path)
+  local has_full_date = filename:find("%D", 1, true) or filename:find("%Y-%m-%d", 1, true)
+  if not has_full_date then
+    error(
+      "jjournal: config.file_path's filename must contain '%D' or the literal '%Y-%m-%d' "
+        .. "so every file stays uniquely and recoverably dated by its filename alone; got: "
+        .. file_path,
+      0
+    )
+  end
+end
+
 M.setup = function(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  validate_file_path(M.config.file_path)
 
   bind_mappings()
   register_autocmds()
