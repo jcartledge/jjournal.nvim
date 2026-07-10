@@ -608,13 +608,6 @@ describe("jjournal.setup", function()
 		end)
 	end)
 
-	it("includes a <leader>jJ mapping that prompts for a date and opens it in a vsplit", function()
-		assert.are.same(
-			{ target = "prompt", cmd = "vsplit", desc = "Jump to journal date (split)" },
-			jjournal.mappings["<leader>jJ"]
-		)
-	end)
-
 	it("binds every default mapping in normal mode, wired to execute the right target/cmd, with its desc", function()
 		setup_setup_test({
 			config = { use_default_mappings = true },

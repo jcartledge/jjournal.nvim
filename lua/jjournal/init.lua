@@ -165,23 +165,20 @@ end
 
 ---@class JjournalMapping
 ---@field target "today"|"prev"|"next"|"prompt"|"search"
----@field cmd string
 ---@field desc string
 
 ---Default mappings bound when config.use_default_mappings is true. Set an
----entry to `false` before calling setup() to disable it individually.
+---entry to `false` before calling setup() to disable it individually. None
+---of these pass a cmd to execute() -- open_date's own "edit" default
+---applies uniformly, since there's no split variant to select between.
 ---@type table<string, JjournalMapping|false>
 M.mappings = {
-  ["gj"] = { target = "today", cmd = "edit", desc = "Go to today's journal" },
-  ["gJ"] = { target = "today", cmd = "vsplit", desc = "Go to today's journal (split)" },
-  ["[j"] = { target = "prev", cmd = "edit", desc = "Previous journal" },
-  ["]j"] = { target = "next", cmd = "edit", desc = "Next journal" },
-  ["[J"] = { target = "prev", cmd = "vsplit", desc = "Previous journal (split)" },
-  ["]J"] = { target = "next", cmd = "vsplit", desc = "Next journal (split)" },
-  ["<leader>fj"] = { target = "search", cmd = "grep", desc = "Search journal backlog (grep)" },
+  ["gj"] = { target = "today", desc = "Go to today's journal" },
+  ["[j"] = { target = "prev", desc = "Previous journal" },
+  ["]j"] = { target = "next", desc = "Next journal" },
+  ["<leader>fj"] = { target = "search", desc = "Search journal backlog (grep)" },
 
-  ["<leader>jj"] = { target = "prompt", cmd = "edit", desc = "Jump to journal date" },
-  ["<leader>jJ"] = { target = "prompt", cmd = "vsplit", desc = "Jump to journal date (split)" },
+  ["<leader>jj"] = { target = "prompt", desc = "Jump to journal date" },
 }
 
 ---Merges `opts` into the current config and (re-)binds mappings and

@@ -105,20 +105,16 @@ search~
 Bound in normal mode when `use_default_mappings = true` (the default):
 
     gj              Open today's journal entry.
-    gJ              Open today's journal entry in a vertical split.
     [j              Step to the previous day's entry.
     ]j              Step to the next day's entry.
-    [J              Like [j, opening in a vertical split.
-    ]J              Like ]j, opening in a vertical split.
     <leader>jj      Prompt for a date and open it.
-    <leader>jJ      Prompt for a date and open it in a vertical split.
     <leader>fj      Search the journal backlog. See |jjournal-search|.
 
-Stepping ([j/]j/[J/]J) shifts the current date by one day in that
-direction. If the shifted date is today or later, it opens that exact
-date directly, creating it if needed -- so you can step forward into
-blank future days to plan ahead, or back out of one. Otherwise (still
-before today), it skips to the nearest existing entry in that direction
+Stepping ([j/]j) shifts the current date by one day in that direction.
+If the shifted date is today or later, it opens that exact date
+directly, creating it if needed -- so you can step forward into blank
+future days to plan ahead, or back out of one. Otherwise (still before
+today), it skips to the nearest existing entry in that direction
 instead of opening blank historical days one at a time.
 
 Opening a date that doesn't exist on disk yet -- by any mapping, not
