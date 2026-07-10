@@ -1,6 +1,8 @@
 local jjournal = require("jjournal")
 local assert = require("luassert")
 local setup_test = require("support.setup_test")
+local busted = require("busted")
+local describe, it = busted.describe, busted.it
 
 describe("jjournal config", function()
 	it("defaults to '~/notes/journals/' with default mappings enabled before setup() is called", function()
