@@ -2,6 +2,8 @@
 
 **Use Case:** Neovim's "Lua Diagnostics" (almost certainly `lua_ls`, based on the source label) flags an "undefined field" warning on every line in the test suite that reads a stub/mock's call record (`.calls`, `.was_called(...)`, `.was_called_with(...)`, etc. — anywhere a stub/spy object from `luassert` is used). This happens because `luassert`'s stub/spy return shape has no type annotations `lua_ls` knows about, so it can't tell those fields exist — it's noise, not a real bug, but it's noise on nearly every assertion in `tests/jjournal_spec.lua`. Separately, no linter of any kind currently runs as part of `./tests/scripts/run.sh` or anywhere else automated, so this and any future lint issue only surface if someone happens to have their editor open and notices.
 
+Since the `init.lua` module-split refactor (see `restructure-init-lua-into-modules.md`), all interfaces — public and private/internal — are annotated with LuaCATS (`---@param`/`---@return`) comments for `lua_ls` to check. Whichever tool this story settles on should also verify those annotations are actually being enforced (a deliberately wrong `---@param` type should surface as a lint failure), not just that the stub/mock warning is silenced — otherwise the annotations are documentation-only and can drift unnoticed.
+
 ### **Acceptance Criteria**
 
 * **Given** the stub/mock call-record fields (`.calls`, `.was_called`, etc.) used throughout `tests/jjournal_spec.lua`,

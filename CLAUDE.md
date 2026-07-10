@@ -13,7 +13,9 @@ spec/done/      -- complete
 
 A story moves through these stages by moving its file: `spec/backlog/story-name.md` -> `spec/todo/story-name.md` -> `spec/doing/story-name.md` -> `spec/done/story-name.md`. Only one story should normally be in `doing/` at a time.
 
-Every change should be tied to a story that is in `spec/doing/` at the time the change is made. If a change is needed and no story covers it, stop: create the story first (see the template below), move it into `spec/doing/`, and only then make the change. This applies to process and tooling changes in this repo (CLAUDE.md, tests, CI config, etc.) just as much as to plugin features — small or "obvious" changes aren't exempt.
+Every change should be tied to a story that is in `spec/doing/` at the time the change is made. If a change is needed and no story covers it, stop: create the story first (see the template below), move it into `spec/doing/`, and only then make the change. This applies to process and tooling changes in this repo (tests, CI config, etc.) just as much as to plugin features — small or "obvious" changes aren't exempt.
+
+Changes to this file (CLAUDE.md) itself are exempt from this rule. It isn't yet decided whether process/documentation changes should be tracked with the same story discipline as code changes, so edits here can be made directly, without a story.
 
 Adding new stories to `spec/backlog/` is exempt from this rule — planning isn't itself a change, so it can happen without a story of its own. This should usually happen when nothing is in `spec/doing/`. The exception: if the new stories are a direct byproduct of the story currently in `doing/` (an edge case being deferred, a bug spotted while implementing, a related future enhancement), they can be added to `spec/backlog/` while that story is still in progress.
 
@@ -62,6 +64,14 @@ Avoid undeclared globals in spec files. Busted normally injects `describe`/`it` 
 Avoid busted's test lifecycle functions (`before_each`, `after_each`, `setup`, `teardown`). They spread state-setup logic across a file, away from the test that depends on it, and make a single test hard to read in isolation. Prefer passing the test body into a shared, reusable helper (like `setup_test`) that wraps setup and cleanup around it, rather than framework hooks.
 
 Tests run inside a real headless Neovim, not a Lua-only stub, so a couple of genuine Neovim behaviors are worth knowing when a spec creates real buffers (via `vim.api.nvim_create_buf`) rather than stubbing everything: a *scratch* buffer (`nvim_create_buf(false, true)`) is documented to always report `'nomodified'` regardless of content, so any spec that needs a buffer to actually become modified must use a normal one (`nvim_create_buf(false, false)`) instead. And a callback that defers work via `vim.schedule` (e.g. to avoid mutating a buffer mid-transition, like wiping it during its own `BufWinLeave`) won't have run yet immediately after the spec invokes the callback — give the event loop a tick with `vim.wait(20)` before asserting on the outcome.
+
+## Comments
+
+Comments explain *why*, not *what*. If a comment just restates what the function name and its implementation already make clear, leave it out. If there's a non-obvious reason, edge case, tradeoff, or a decision someone could reasonably second-guess (or accidentally undo) later, write it down — see `shift_date`'s noon-anchoring note or the `BufWinLeave` autocmd's `vim.schedule` deferral note in `lua/jjournal/init.lua` for the kind of comment worth keeping.
+
+Don't use decorative section banners (e.g. `-- ======== ATOM 1 ========`) to organize a file. They invite invented, numbered terminology ("ATOM 2", "the unified execution pipeline") that reads as private notes-to-self rather than documentation, and they drift out of sync with what's actually in the file as it grows. A blank line is usually enough to separate groups of related functions; reach for a short, plain one-line header comment only if the grouping genuinely isn't obvious from reading top to bottom.
+
+Don't reference a file's own path in a comment inside that file (e.g. `-- lua/user/journal.lua`). It goes stale the moment the file is renamed or moved, and a directory listing already says the same thing with no risk of drifting.
 
 ## Before committing
 
