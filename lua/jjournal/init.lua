@@ -194,7 +194,6 @@ M.mappings = {
   ["]J"] = { target = "next", cmd = "vsplit", desc = "Next journal (split)" },
   ["<leader>fj"] = { target = "search", cmd = "grep", desc = "Search journal backlog (grep)" },
 
-  -- The Unified Symmetry Anchor Layout
   ["<leader>jj"] = { target = "prompt", cmd = "edit", desc = "Jump to journal date" },
 }
 
