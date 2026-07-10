@@ -13,6 +13,8 @@ spec/done/      -- complete
 
 A story moves through these stages by moving its file: `spec/backlog/story-name.md` -> `spec/todo/story-name.md` -> `spec/doing/story-name.md` -> `spec/done/story-name.md`. Only one story should normally be in `doing/` at a time.
 
+Every change should be tied to a story that is in `spec/doing/` at the time the change is made. If a change is needed and no story covers it, stop: create the story first (see the template below), move it into `spec/doing/`, and only then make the change. This applies to process and tooling changes in this repo (CLAUDE.md, tests, CI config, etc.) just as much as to plugin features — small or "obvious" changes aren't exempt.
+
 Each story is one file, named descriptively in kebab-case (e.g. `configurable-journal-path-template.md`), and follows this template:
 
 ```markdown
