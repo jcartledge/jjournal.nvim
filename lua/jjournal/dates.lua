@@ -77,12 +77,17 @@ local function all_available_dates(base_dir)
 end
 
 ---The destination index in a sorted date array for a skip-search in
----`direction` from `current`.
+---`direction` from `current`, `count` entries out (default 1, i.e. the
+---nearest one). May return an out-of-range index (e.g. requesting the 5th
+---entry when only 2 exist) -- M.skip indexes the array with it directly
+---and relies on Lua's out-of-bounds table reads returning nil, rather than
+---bounds-checking here too.
 ---@param dates string[]
 ---@param current string
 ---@param direction integer
+---@param count integer|nil
 ---@return integer|nil
-local function target_index(dates, current, direction)
+local function target_index(dates, current, direction, count)
   local index = nil
   for i, date in ipairs(dates) do
     if date >= current then
@@ -96,7 +101,9 @@ local function target_index(dates, current, direction)
   end
 
   if not index and direction < 0 then index = #dates end
-  return index
+  if not index then return nil end
+
+  return index + direction * ((count or 1) - 1)
 end
 
 ---Shifts a YYYY-MM-DD date string by `days` (may be negative). Anchored at
@@ -111,29 +118,33 @@ local function shift_date(date_str, days)
   return os.date("%Y-%m-%d", time + days * 86400)
 end
 
----Shifts exactly one calendar day in `direction` from wherever the current
----buffer is anchored, regardless of whether the result lands before or
----after today. open_date's own auto-creation opens it whether or not a
----file exists for it yet.
+---Shifts `count` calendar days (default 1) in `direction` from wherever the
+---current buffer is anchored, regardless of whether the result lands
+---before or after today. open_date's own auto-creation opens it whether or
+---not a file exists for it yet.
 ---@param base_dir string
 ---@param direction integer
+---@param count integer|nil
 ---@return string
-function M.step(base_dir, direction)
+function M.step(base_dir, direction, count)
   local current = current_anchor_date(base_dir)
-  return shift_date(current, direction > 0 and 1 or -1)
+  local days = count or 1
+  return shift_date(current, direction > 0 and days or -days)
 end
 
----Jumps to the nearest existing entry (on disk or in an open buffer) in
----`direction` from wherever the current buffer is anchored, regardless of
----whether the result lands before or after today. Returns nil if there is
----no existing entry in that direction.
+---Jumps to the `count`-th existing entry (default 1, i.e. the nearest one;
+---on disk or in an open buffer) in `direction` from wherever the current
+---buffer is anchored, regardless of whether the result lands before or
+---after today. Returns nil if there is no such entry in that direction
+---(including when fewer than `count` entries exist).
 ---@param base_dir string
 ---@param direction integer
+---@param count integer|nil
 ---@return string|nil
-function M.skip(base_dir, direction)
+function M.skip(base_dir, direction, count)
   local current = current_anchor_date(base_dir)
   local dates = all_available_dates(base_dir)
-  local index = target_index(dates, current, direction)
+  local index = target_index(dates, current, direction, count)
 
   return dates[index]
 end

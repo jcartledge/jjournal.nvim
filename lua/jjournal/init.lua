@@ -27,22 +27,25 @@ M.prompt_for_date = function(callback)
 end
 
 ---Resolves `target` to a `YYYY-MM-DD` string (or nil), passed to
----`callback`. "step_prev"/"step_next" always shift exactly one day in that
----direction; "skip_prev"/"skip_next" always jump to the nearest existing
----entry in that direction -- neither depends on where today falls.
+---`callback`. "step_prev"/"step_next" always shift `count` days (default 1)
+---in that direction; "skip_prev"/"skip_next" always jump to the `count`-th
+---existing entry (default 1, i.e. the nearest one) in that direction --
+---neither depends on where today falls. `count` is ignored for "today" and
+---"prompt", which have no meaningful notion of it.
 ---@param target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"
 ---@param callback fun(date_str: string|nil)
-M.resolve_date = function(target, callback)
+---@param count integer|nil
+M.resolve_date = function(target, callback, count)
   if target == "today" then
     callback(vim.fn.strftime "%F")
   elseif target == "step_prev" then
-    callback(dates.step(M.config.base_dir, -1))
+    callback(dates.step(M.config.base_dir, -1, count))
   elseif target == "step_next" then
-    callback(dates.step(M.config.base_dir, 1))
+    callback(dates.step(M.config.base_dir, 1, count))
   elseif target == "skip_prev" then
-    callback(dates.skip(M.config.base_dir, -1))
+    callback(dates.skip(M.config.base_dir, -1, count))
   elseif target == "skip_next" then
-    callback(dates.skip(M.config.base_dir, 1))
+    callback(dates.skip(M.config.base_dir, 1, count))
   elseif target == "prompt" then
     M.prompt_for_date(callback)
   end
@@ -92,26 +95,35 @@ end
 ---Runs one of the mapping actions directly: `target` is one of "today",
 ---"step_prev", "step_next", "skip_prev", "skip_next", "prompt", or
 ---"search"; `cmd` is the Ex command used to open the result (e.g. "edit"
----or "vsplit"), ignored for "search".
+---or "vsplit"), ignored for "search". `count` is forwarded to
+---resolve_date; see its docstring for what it means per target.
 ---@param target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"search"
 ---@param cmd string|nil
-M.execute = function(target, cmd)
+---@param count integer|nil
+M.execute = function(target, cmd, count)
   if target == "search" then
     M.search_backlog()
     return
   end
 
-  M.resolve_date(target, function(resolved_date) M.open_date(resolved_date, cmd) end)
+  M.resolve_date(target, function(resolved_date) M.open_date(resolved_date, cmd) end, count)
 end
 
 ---Binds every entry in M.mappings in normal mode, unless
 ---use_default_mappings is false or the individual mapping was disabled.
+---Forwards vim.v.count1 as execute()'s count -- targets that don't use a
+---count (today/prompt/search) simply ignore it.
 local function bind_mappings()
   if not M.config.use_default_mappings then return end
 
   for lhs, spec in pairs(M.mappings) do
     if spec ~= false then
-      vim.keymap.set("n", lhs, function() M.execute(spec.target, spec.cmd) end, { desc = spec.desc, silent = true })
+      vim.keymap.set(
+        "n",
+        lhs,
+        function() M.execute(spec.target, spec.cmd, vim.v.count1) end,
+        { desc = spec.desc, silent = true }
+      )
     end
   end
 end

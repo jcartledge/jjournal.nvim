@@ -120,6 +120,12 @@ Skipping ([j/]j) jumps to the nearest entry that already exists (on
 disk or in an open buffer) in that direction, without stopping at blank
 days in between. Both work the same regardless of where today falls.
 
+All four accept a count prefix: `3]jj` steps forward 3 days instead of
+1; `2]j` skips to the 2nd existing entry in that direction instead of
+the nearest one. With no count, both default to 1, matching the
+behavior above. A count on `gj`, `<leader>jj`, or `<leader>fj` has no
+effect.
+
 Opening a date that doesn't exist on disk yet -- by any mapping, not
 just stepping -- opens it as a disposable preview: if you navigate away
 without typing anything into it, it's discarded automatically (no
@@ -176,17 +182,21 @@ setup({opts})
     autocmds. See |jjournal-configuration| for available keys.
 
                                                           *jjournal.execute()*
-execute({target}, {cmd})
+execute({target}, {cmd}, {count})
     Runs one of the mapping actions directly: {target} is one of "today",
     "step_prev", "step_next", "skip_prev", "skip_next", "prompt", or
     "search"; {cmd} is the Ex command used to open the result (e.g. "edit"
-    or "vsplit"), ignored for "search".
+    or "vsplit"), ignored for "search". {count} (default 1) is forwarded
+    to |jjournal.resolve_date()|.
 
                                                      *jjournal.resolve_date()*
-resolve_date({target}, {callback})
+resolve_date({target}, {callback}, {count})
     Resolves {target} ("today", "step_prev", "step_next", "skip_prev",
     "skip_next", or "prompt") to a `YYYY-MM-DD` string (or `nil`), passed
-    to {callback}.
+    to {callback}. For "step_prev"/"step_next", {count} (default 1) is
+    the number of days to shift; for "skip_prev"/"skip_next", it's which
+    existing entry to jump to (1 = nearest). Ignored for "today" and
+    "prompt".
 
                                                        *jjournal.open_date()*
 open_date({date_str}, {cmd})

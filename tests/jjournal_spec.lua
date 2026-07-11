@@ -230,6 +230,65 @@ describe("jjournal.resolve_date", function()
 		end)
 	end)
 
+	it("steps forward N days when count-prefixed", function()
+		setup_resolve_date_test({
+			fn = { expand = "2026-07-10.md" },
+		}, function()
+			jjournal.resolve_date("step_next", function(resolved_date)
+				assert.are.equal("2026-07-13", resolved_date)
+			end, 3)
+		end)
+	end)
+
+	it("steps backward N days when count-prefixed", function()
+		setup_resolve_date_test({
+			fn = { expand = "2026-07-13.md" },
+		}, function()
+			jjournal.resolve_date("step_prev", function(resolved_date)
+				assert.are.equal("2026-07-10", resolved_date)
+			end, 3)
+		end)
+	end)
+
+	it("skips forward to the Nth existing entry when count-prefixed", function()
+		setup_resolve_date_test({
+			fn = {
+				glob = { "2026-06-01.md", "2026-06-03.md", "2026-06-05.md" },
+				expand = "2026-06-01.md",
+			},
+		}, function()
+			jjournal.resolve_date("skip_next", function(resolved_date)
+				assert.are.equal("2026-06-05", resolved_date)
+			end, 2)
+		end)
+	end)
+
+	it("skips backward to the Nth existing entry when count-prefixed", function()
+		setup_resolve_date_test({
+			fn = {
+				glob = { "2026-06-01.md", "2026-06-03.md", "2026-06-05.md" },
+				expand = "2026-06-05.md",
+			},
+		}, function()
+			jjournal.resolve_date("skip_prev", function(resolved_date)
+				assert.are.equal("2026-06-01", resolved_date)
+			end, 2)
+		end)
+	end)
+
+	it("resolves to nil when a count-prefixed skip requests more entries than exist", function()
+		setup_resolve_date_test({
+			fn = {
+				glob = { "2026-06-01.md", "2026-06-03.md" },
+				expand = "2026-06-01.md",
+			},
+		}, function()
+			jjournal.resolve_date("skip_next", function(resolved_date)
+				assert.is_nil(resolved_date)
+			end, 5)
+		end)
+	end)
+
 	it("resolves 'prompt' by delegating to prompt_for_date", function()
 		setup_test({
 			ui = { input = function(_, callback) callback("2026-07-09") end },
@@ -574,6 +633,37 @@ describe("jjournal.execute", function()
 			assert.stub(vim.cmd).was_called_with("vsplit /virtual/test/journal/path/2026-07-09.md")
 		end)
 	end)
+
+	it("ignores a count prefix for the 'today' target", function()
+		setup_test({
+			fn = { strftime = "2026-07-10", isdirectory = 1, filereadable = 1 },
+			vim = { cmd = true },
+		}, function()
+			jjournal.execute("today", "edit", 5)
+
+			assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-10.md")
+		end)
+	end)
+
+	it("ignores a count prefix for the 'prompt' target", function()
+		setup_test({
+			ui = { input = function(_, callback) callback("2026-07-09") end },
+			fn = { isdirectory = 1, filereadable = 1 },
+			vim = { cmd = true },
+		}, function()
+			jjournal.execute("prompt", "edit", 5)
+
+			assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
+		end)
+	end)
+
+	it("ignores a count prefix for the 'search' target", function()
+		setup_test({ jjournal = { search_backlog = true } }, function()
+			jjournal.execute("search", nil, 5)
+
+			assert.stub(jjournal.search_backlog).was_called(1)
+		end)
+	end)
 end)
 
 describe("jjournal.setup", function()
@@ -612,7 +702,7 @@ describe("jjournal.setup", function()
 		end)
 	end)
 
-	it("binds every default mapping in normal mode, wired to execute the right target/cmd, with its desc", function()
+	it("binds every default mapping in normal mode, wired to execute the right target/cmd/count, with its desc", function()
 		setup_setup_test({
 			config = { use_default_mappings = true },
 			jjournal = { execute = true },
@@ -636,7 +726,7 @@ describe("jjournal.setup", function()
 				assert.are.same({ desc = spec.desc, silent = true }, matched.vals[4])
 
 				matched.vals[3]() -- invoke the bound handler as if the key had been pressed
-				assert.stub(jjournal.execute).was_called_with(spec.target, spec.cmd)
+				assert.stub(jjournal.execute).was_called_with(spec.target, spec.cmd, vim.v.count1)
 			end
 		end)
 	end)
