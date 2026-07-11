@@ -26,17 +26,23 @@ M.prompt_for_date = function(callback)
   end)
 end
 
----Resolves `target` ("today", "prev", "next", or "prompt") to a
----`YYYY-MM-DD` string (or nil), passed to `callback`.
----@param target "today"|"prev"|"next"|"prompt"
+---Resolves `target` to a `YYYY-MM-DD` string (or nil), passed to
+---`callback`. "step_prev"/"step_next" always shift exactly one day in that
+---direction; "skip_prev"/"skip_next" always jump to the nearest existing
+---entry in that direction -- neither depends on where today falls.
+---@param target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"
 ---@param callback fun(date_str: string|nil)
 M.resolve_date = function(target, callback)
   if target == "today" then
     callback(vim.fn.strftime "%F")
-  elseif target == "prev" then
-    callback(dates.get_nav_date(M.config.base_dir, -1))
-  elseif target == "next" then
-    callback(dates.get_nav_date(M.config.base_dir, 1))
+  elseif target == "step_prev" then
+    callback(dates.step(M.config.base_dir, -1))
+  elseif target == "step_next" then
+    callback(dates.step(M.config.base_dir, 1))
+  elseif target == "skip_prev" then
+    callback(dates.skip(M.config.base_dir, -1))
+  elseif target == "skip_next" then
+    callback(dates.skip(M.config.base_dir, 1))
   elseif target == "prompt" then
     M.prompt_for_date(callback)
   end
@@ -84,9 +90,10 @@ M.search_backlog = function()
 end
 
 ---Runs one of the mapping actions directly: `target` is one of "today",
----"prev", "next", "prompt", or "search"; `cmd` is the Ex command used to
----open the result (e.g. "edit" or "vsplit"), ignored for "search".
----@param target "today"|"prev"|"next"|"prompt"|"search"
+---"step_prev", "step_next", "skip_prev", "skip_next", "prompt", or
+---"search"; `cmd` is the Ex command used to open the result (e.g. "edit"
+---or "vsplit"), ignored for "search".
+---@param target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"search"
 ---@param cmd string|nil
 M.execute = function(target, cmd)
   if target == "search" then
@@ -164,7 +171,7 @@ local function register_autocmds()
 end
 
 ---@class JjournalMapping
----@field target "today"|"prev"|"next"|"prompt"|"search"
+---@field target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"search"
 ---@field desc string
 
 ---Default mappings bound when config.use_default_mappings is true. Set an
@@ -174,8 +181,10 @@ end
 ---@type table<string, JjournalMapping|false>
 M.mappings = {
   ["gj"] = { target = "today", desc = "Go to today's journal" },
-  ["[j"] = { target = "prev", desc = "Previous journal" },
-  ["]j"] = { target = "next", desc = "Next journal" },
+  ["[jj"] = { target = "step_prev", desc = "Step to previous day" },
+  ["]jj"] = { target = "step_next", desc = "Step to next day" },
+  ["[j"] = { target = "skip_prev", desc = "Skip to previous entry" },
+  ["]j"] = { target = "skip_next", desc = "Skip to next entry" },
   ["<leader>fj"] = { target = "search", desc = "Search journal backlog (grep)" },
 
   ["<leader>jj"] = { target = "prompt", desc = "Jump to journal date" },

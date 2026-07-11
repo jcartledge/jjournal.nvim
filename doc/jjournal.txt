@@ -17,9 +17,9 @@ jjournal.nvim is a minimal daily journaling plugin. Each day is a single
 file named by date, nested under year/month directories by default (e.g.
 `2026/07/2026-07-09.md`), or laid out however you like via
 |jjournal-config-file_path|, inside a configured journal folder. It
-provides mappings to jump to today's entry, step to the previous/next
-entry (see |jjournal-mappings| for exactly what "step" means), jump to an
-arbitrary date, and search across your journal backlog.
+provides mappings to jump to today's entry, step or skip to the
+previous/next entry (see |jjournal-mappings| for the difference), jump to
+an arbitrary date, and search across your journal backlog.
 
 ==============================================================================
 2. Setup                                                    *jjournal-setup*
@@ -74,7 +74,7 @@ file_path~
         file_path = "%Y/%m/%d/journal-%D.txt"  -- year/month/day dirs,
                                                 -- descriptive filename
 <
-    Navigation ([j, ]j, etc.) identifies each file's date by extracting a
+    Navigation ([jj, ]jj, [j, ]j, etc.) identifies each file's date by extracting a
     `YYYY-MM-DD` substring from its filename alone, so the filename portion
     of the template (the segment after the last `/`) must contain either
     `%D` or the literal sequence `%Y-%m-%d`, written in that order. Any
@@ -105,17 +105,20 @@ search~
 Bound in normal mode when `use_default_mappings = true` (the default):
 
     gj              Open today's journal entry.
-    [j              Step to the previous day's entry.
-    ]j              Step to the next day's entry.
+    [jj             Step to the previous day's entry.
+    ]jj             Step to the next day's entry.
+    [j              Skip to the previous existing entry.
+    ]j              Skip to the next existing entry.
     <leader>jj      Prompt for a date and open it.
     <leader>fj      Search the journal backlog. See |jjournal-search|.
 
-Stepping ([j/]j) shifts the current date by one day in that direction.
-If the shifted date is today or later, it opens that exact date
-directly, creating it if needed -- so you can step forward into blank
-future days to plan ahead, or back out of one. Otherwise (still before
-today), it skips to the nearest existing entry in that direction
-instead of opening blank historical days one at a time.
+Stepping ([jj/]jj) shifts the current date by exactly one day in that
+direction and opens it, creating it if it doesn't exist yet -- useful
+for moving through consecutive days, including blank ones.
+
+Skipping ([j/]j) jumps to the nearest entry that already exists (on
+disk or in an open buffer) in that direction, without stopping at blank
+days in between. Both work the same regardless of where today falls.
 
 Opening a date that doesn't exist on disk yet -- by any mapping, not
 just stepping -- opens it as a disposable preview: if you navigate away
@@ -175,13 +178,15 @@ setup({opts})
                                                           *jjournal.execute()*
 execute({target}, {cmd})
     Runs one of the mapping actions directly: {target} is one of "today",
-    "prev", "next", "prompt", or "search"; {cmd} is the Ex command used to
-    open the result (e.g. "edit" or "vsplit"), ignored for "search".
+    "step_prev", "step_next", "skip_prev", "skip_next", "prompt", or
+    "search"; {cmd} is the Ex command used to open the result (e.g. "edit"
+    or "vsplit"), ignored for "search".
 
                                                      *jjournal.resolve_date()*
 resolve_date({target}, {callback})
-    Resolves {target} ("today", "prev", "next", or "prompt") to a
-    `YYYY-MM-DD` string (or `nil`), passed to {callback}.
+    Resolves {target} ("today", "step_prev", "step_next", "skip_prev",
+    "skip_next", or "prompt") to a `YYYY-MM-DD` string (or `nil`), passed
+    to {callback}.
 
                                                        *jjournal.open_date()*
 open_date({date_str}, {cmd})

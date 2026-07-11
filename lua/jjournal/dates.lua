@@ -1,6 +1,8 @@
--- Chronological navigation math: figuring out where "next"/"prev" should
--- land. Everything here is private except get_nav_date, the one thing
--- jjournal/init.lua actually needs.
+-- Chronological navigation math: figuring out where step/skip should land.
+-- Everything here is private except M.step and M.skip, the two things
+-- jjournal/init.lua actually needs. Neither depends on "today" at all --
+-- each is a consistent, direction-only operation regardless of where
+-- today happens to fall.
 local path = require "jjournal.path"
 
 local M = {}
@@ -109,26 +111,27 @@ local function shift_date(date_str, days)
   return os.date("%Y-%m-%d", time + days * 86400)
 end
 
----Resolves the navigation destination one step in `direction` from wherever
----the current buffer is anchored.
----
----Shifting the current date by one day in the requested direction is the
----candidate destination. If that candidate is today or later, it's used
----directly -- stepping exactly one day at a time into today/the future,
----and opened whether or not a file exists for it yet (open_date already
----auto-creates missing directories). Only when the candidate is still
----before today does this fall back to skip-searching for the nearest
----existing entry in that direction, preserving history-browsing behavior.
+---Shifts exactly one calendar day in `direction` from wherever the current
+---buffer is anchored, regardless of whether the result lands before or
+---after today. open_date's own auto-creation opens it whether or not a
+---file exists for it yet.
+---@param base_dir string
+---@param direction integer
+---@return string
+function M.step(base_dir, direction)
+  local current = current_anchor_date(base_dir)
+  return shift_date(current, direction > 0 and 1 or -1)
+end
+
+---Jumps to the nearest existing entry (on disk or in an open buffer) in
+---`direction` from wherever the current buffer is anchored, regardless of
+---whether the result lands before or after today. Returns nil if there is
+---no existing entry in that direction.
 ---@param base_dir string
 ---@param direction integer
 ---@return string|nil
-function M.get_nav_date(base_dir, direction)
+function M.skip(base_dir, direction)
   local current = current_anchor_date(base_dir)
-  local today = vim.fn.strftime "%F"
-  local candidate = shift_date(current, direction > 0 and 1 or -1)
-
-  if candidate >= today then return candidate end
-
   local dates = all_available_dates(base_dir)
   local index = target_index(dates, current, direction)
 
