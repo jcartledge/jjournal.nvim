@@ -110,13 +110,15 @@ With `is_new_entry` no longer needed to decide whether to flag anything, `open_d
 * **Then** it is not wiped -- unchanged from today.
 
 * **Given** `use_default_mappings = true`,
-* **When** `setup()` runs,
-* **Then** `<leader>jp` is bound alongside the other default mappings, and can be disabled individually like any other entry in `M.mappings`.
+* **When** a journal buffer is opened,
+* **Then** `<leader>jp` is bound local to that buffer specifically (not globally at `setup()`, unlike every other default mapping), and can be disabled individually like any other entry in `M.mappings` -- pinning only means something for a buffer jjournal actually manages, so pressing `<leader>jp` anywhere else should simply not be mapped at all, rather than silently pinning some unrelated buffer.
 
 ### **Open questions -- need deciding when this is picked up**
 
 * Exact public API shape for pinning -- e.g. a parameterless `M.pin_buffer()` operating on the current buffer, dispatched through `M.execute("pin")` as a third early-return case alongside `"search"`.
 * Whether pinning should surface any feedback (e.g. `vim.notify`), given there's no visual/statusline indicator of pin state today -- possibly worth tying into the still-backlogged `expose-buffer-status-today-archive-preview.md` instead of adding a one-off notification here.
+
+**Resolved while implementing:** `<leader>jp` is buffer-local (`JjournalMapping.buffer_local = true`), bound per-buffer from the existing `BufReadPost`/`BufNewFile` status-tagging autocmd via a new `bind_buffer_local_mappings(buf)`, rather than globally from `bind_mappings()` at `setup()` time like every other default mapping. This was a direct follow-up question once pinning was implemented (should pressing `<leader>jp` outside a journal buffer do anything?) -- decided no, so it's simply unmapped outside buffers jjournal manages.
 
 ### **Consequences for existing tests**
 

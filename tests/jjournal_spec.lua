@@ -25,7 +25,7 @@ describe("jjournal config", function()
 	it("normalizes a configured path that has no trailing slash", function()
 		setup_test({
 			config = { base_dir = "/virtual/test/no-trailing-slash" },
-			fn = { isdirectory = 1, filereadable = 1 },
+			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.open_date("2026-07-09", "edit")
@@ -355,13 +355,11 @@ describe("jjournal.prompt_for_date", function()
 end)
 
 describe("jjournal.open_date", function()
-	-- Most specs here just need the parent directory to already exist and the
-	-- file itself to already exist too, so the mkdir check and the preview-
-	-- marking check are both no-ops; override individual fields (e.g.
-	-- fn.isdirectory, fn.filereadable) to exercise other paths.
+	-- Most specs here just need the parent directory to already exist, so the
+	-- mkdir check is a no-op; override fn.isdirectory to exercise that path.
 	local function setup_open_date_test(overrides, test_fn)
 		setup_test(vim.tbl_deep_extend("force", {
-			fn = { isdirectory = 1, filereadable = 1 },
+			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, overrides or {}), test_fn)
 	end
@@ -430,35 +428,6 @@ describe("jjournal.open_date", function()
 
 			assert.stub(vim.fn.mkdir).was_not_called()
 			assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
-		end)
-	end)
-
-	it("marks a newly opened buffer as a preview when the file doesn't exist yet", function()
-		local buf
-		setup_open_date_test({
-			fn = {
-				filereadable = 0,
-				bufadd = function()
-					-- Not a scratch buffer: real bufadd calls always return a
-					-- normal, file-backed buffer, never a scratch one.
-					buf = vim.api.nvim_create_buf(false, false)
-					return buf
-				end,
-			},
-		}, function()
-			jjournal.open_date("2026-07-09", "edit")
-
-			assert.is_true(vim.b[buf].jjournal_preview)
-
-			vim.api.nvim_buf_delete(buf, { force = true })
-		end)
-	end)
-
-	it("does not mark a buffer as a preview when the file already exists", function()
-		setup_open_date_test({ fn = { bufadd = true } }, function()
-			jjournal.open_date("2026-07-09", "edit")
-
-			assert.stub(vim.fn.bufadd).was_not_called()
 		end)
 	end)
 end)
@@ -603,17 +572,20 @@ describe("jjournal.search_backlog", function()
 end)
 
 describe("jjournal.execute", function()
-	it("delegates to search_backlog for the 'search' target without resolving a date", function()
-		setup_test({ jjournal = { search_backlog = true } }, function()
+	it("runs the search provider for the 'search' target without resolving or opening a date", function()
+		setup_test({
+			ui = { input = function(_, callback) callback("todo") end },
+			vim = { cmd = true },
+		}, function()
 			jjournal.execute("search")
 
-			assert.stub(jjournal.search_backlog).was_called(1)
+			assert.stub(vim.cmd).was_called_with("vimgrep /todo/gj /virtual/test/journal/path/**/*.md")
 		end)
 	end)
 
 	it("resolves and opens a date for non-search targets", function()
 		setup_test({
-			fn = { strftime = "2026-07-10", isdirectory = 1, filereadable = 1 },
+			fn = { strftime = "2026-07-10", isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("today", "vsplit")
@@ -625,7 +597,7 @@ describe("jjournal.execute", function()
 	it("prompts for a date and opens it in a vsplit for the 'prompt' target", function()
 		setup_test({
 			ui = { input = function(_, callback) callback("2026-07-09") end },
-			fn = { isdirectory = 1, filereadable = 1 },
+			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("prompt", "vsplit")
@@ -634,9 +606,22 @@ describe("jjournal.execute", function()
 		end)
 	end)
 
+	it("pins the current buffer for the 'pin' target without resolving or opening a date", function()
+		setup_test(nil, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+
+			jjournal.execute("pin")
+
+			assert.is_true(vim.b[buf].jjournal_pinned)
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end)
+	end)
+
 	it("ignores a count prefix for the 'today' target", function()
 		setup_test({
-			fn = { strftime = "2026-07-10", isdirectory = 1, filereadable = 1 },
+			fn = { strftime = "2026-07-10", isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("today", "edit", 5)
@@ -648,7 +633,7 @@ describe("jjournal.execute", function()
 	it("ignores a count prefix for the 'prompt' target", function()
 		setup_test({
 			ui = { input = function(_, callback) callback("2026-07-09") end },
-			fn = { isdirectory = 1, filereadable = 1 },
+			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("prompt", "edit", 5)
@@ -658,10 +643,41 @@ describe("jjournal.execute", function()
 	end)
 
 	it("ignores a count prefix for the 'search' target", function()
-		setup_test({ jjournal = { search_backlog = true } }, function()
+		setup_test({
+			ui = { input = function(_, callback) callback("todo") end },
+			vim = { cmd = true },
+		}, function()
 			jjournal.execute("search", nil, 5)
 
-			assert.stub(jjournal.search_backlog).was_called(1)
+			assert.stub(vim.cmd).was_called_with("vimgrep /todo/gj /virtual/test/journal/path/**/*.md")
+		end)
+	end)
+
+	it("ignores a count prefix for the 'pin' target", function()
+		setup_test(nil, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+
+			jjournal.execute("pin", nil, 5)
+
+			assert.is_true(vim.b[buf].jjournal_pinned)
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end)
+	end)
+end)
+
+describe("jjournal.pin_buffer", function()
+	it("marks the current buffer as pinned", function()
+		setup_test(nil, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+
+			jjournal.pin_buffer()
+
+			assert.is_true(vim.b[buf].jjournal_pinned)
+
+			vim.api.nvim_buf_delete(buf, { force = true })
 		end)
 	end)
 end)
@@ -675,12 +691,12 @@ describe("jjournal.setup", function()
 		}, overrides or {}), test_fn)
 	end
 
-	-- register_autocmds registers two autocmds now (status-tagging and
-	-- preview cleanup), so capturing "the" callback needs to say which event
-	-- it means -- matched via vim.deep_equal since the status autocmd
-	-- registers a list of events and the cleanup one registers a bare
-	-- string. Shared by both the "journal buffer status autocmd" and
-	-- "preview buffer cleanup autocmd" blocks below.
+	-- register_autocmds registers three autocmds now (status-tagging,
+	-- pin-on-edit, and cleanup), so capturing "the" callback needs to say
+	-- which event it means -- matched via vim.deep_equal since the status
+	-- and pin-on-edit autocmds each register a list of events and the
+	-- cleanup one registers a bare string. Shared by the "journal buffer
+	-- status autocmd" and "buffer cleanup and pinning autocmds" blocks below.
 	local function capture_autocmd_callback(events, overrides)
 		local captured
 		setup_test(vim.tbl_deep_extend("force", {
@@ -702,31 +718,41 @@ describe("jjournal.setup", function()
 		end)
 	end)
 
-	it("binds every default mapping in normal mode, wired to execute the right target/cmd/count, with its desc", function()
+	it("binds every non-buffer_local default mapping in normal mode, wired to execute the right target/cmd/count, with its desc", function()
 		setup_setup_test({
 			config = { use_default_mappings = true },
 			jjournal = { execute = true },
 		}, function()
 			local expected_count = 0
-			for _ in pairs(jjournal.mappings) do
-				expected_count = expected_count + 1
+			for _, spec in pairs(jjournal.mappings) do
+				if spec ~= false and not spec.buffer_local then expected_count = expected_count + 1 end
 			end
 			assert.stub(vim.keymap.set).was_called(expected_count)
 
 			for lhs, spec in pairs(jjournal.mappings) do
-				local matched
-				for _, call in ipairs(vim.keymap.set.calls) do
-					if call.vals[1] == "n" and call.vals[2] == lhs then
-						matched = call
-						break
+				if spec ~= false and not spec.buffer_local then
+					local matched
+					for _, call in ipairs(vim.keymap.set.calls) do
+						if call.vals[1] == "n" and call.vals[2] == lhs then
+							matched = call
+							break
+						end
 					end
+
+					assert.is_not_nil(matched, "expected a keymap.set call for " .. lhs)
+					assert.are.same({ desc = spec.desc, silent = true }, matched.vals[4])
+
+					matched.vals[3]() -- invoke the bound handler as if the key had been pressed
+					assert.stub(jjournal.execute).was_called_with(spec.target, spec.cmd, vim.v.count1)
 				end
+			end
+		end)
+	end)
 
-				assert.is_not_nil(matched, "expected a keymap.set call for " .. lhs)
-				assert.are.same({ desc = spec.desc, silent = true }, matched.vals[4])
-
-				matched.vals[3]() -- invoke the bound handler as if the key had been pressed
-				assert.stub(jjournal.execute).was_called_with(spec.target, spec.cmd, vim.v.count1)
+	it("does not bind a buffer_local mapping globally", function()
+		setup_setup_test({ config = { use_default_mappings = true } }, function()
+			for _, call in ipairs(vim.keymap.set.calls) do
+				assert.are_not.equal("<leader>jp", call.vals[2])
 			end
 		end)
 	end)
@@ -772,11 +798,12 @@ describe("jjournal.setup", function()
 	describe("journal buffer status autocmd", function()
 		it("registers a BufReadPost/BufNewFile autocmd scoped recursively to the configured journal path", function()
 			setup_test({ api = { nvim_create_autocmd = true } }, function()
-				-- Called twice total: this autocmd plus the BufWinLeave preview
-				-- cleanup autocmd registered alongside it (see the "preview buffer
-				-- cleanup autocmd" describe block below) -- both sharing the same
-				-- augroup and pattern, registered in this order.
-				assert.stub(vim.api.nvim_create_autocmd).was_called(2)
+				-- Called three times total: this autocmd plus the pin-on-edit and
+				-- BufWinLeave cleanup autocmds registered alongside it (see the
+				-- "buffer cleanup and pinning autocmds" describe block below) --
+				-- all three sharing the same augroup and pattern, registered in
+				-- this order.
+				assert.stub(vim.api.nvim_create_autocmd).was_called(3)
 				local events = vim.api.nvim_create_autocmd.calls[1].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
 				assert.are.same({ "BufReadPost", "BufNewFile" }, events)
@@ -847,35 +874,141 @@ describe("jjournal.setup", function()
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
 		end)
+
+		-- Pinning only means something for a buffer jjournal actually manages,
+		-- so unlike the rest of the default mappings, <leader>jp is bound
+		-- per-buffer from this same autocmd rather than globally at setup() --
+		-- see "does not bind a buffer_local mapping globally" above.
+		it("binds buffer-local mappings when a journal buffer is opened, wired to execute the right target/cmd/count, with its desc", function()
+			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
+			setup_test({
+				fn = { strftime = "2026-07-10" },
+				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
+				config = { use_default_mappings = true },
+				keymap = { set = true },
+				jjournal = { execute = true },
+			}, function()
+				local buf = vim.api.nvim_create_buf(false, true)
+
+				callback({ buf = buf })
+
+				local matched
+				for _, call in ipairs(vim.keymap.set.calls) do
+					if call.vals[1] == "n" and call.vals[2] == "<leader>jp" then
+						matched = call
+						break
+					end
+				end
+
+				assert.is_not_nil(matched, "expected a buffer-local keymap.set call for <leader>jp")
+				assert.are.same(
+					{ desc = jjournal.mappings["<leader>jp"].desc, silent = true, buffer = buf },
+					matched.vals[4]
+				)
+
+				matched.vals[3]() -- invoke the bound handler as if the key had been pressed
+				assert.stub(jjournal.execute).was_called_with("pin", nil, vim.v.count1)
+
+				vim.api.nvim_buf_delete(buf, { force = true })
+			end)
+		end)
+
+		it("does not bind buffer-local mappings when use_default_mappings is false", function()
+			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
+			setup_test({
+				fn = { strftime = "2026-07-10" },
+				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
+				keymap = { set = true },
+			}, function()
+				local buf = vim.api.nvim_create_buf(false, true)
+
+				callback({ buf = buf })
+
+				assert.stub(vim.keymap.set).was_not_called()
+
+				vim.api.nvim_buf_delete(buf, { force = true })
+			end)
+		end)
+
+		it("skips binding a buffer-local mapping that has been explicitly disabled with false", function()
+			local original_spec = jjournal.mappings["<leader>jp"]
+			jjournal.mappings["<leader>jp"] = false
+
+			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
+			local ok, err = pcall(function()
+				setup_test({
+					fn = { strftime = "2026-07-10" },
+					api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
+					config = { use_default_mappings = true },
+					keymap = { set = true },
+				}, function()
+					local buf = vim.api.nvim_create_buf(false, true)
+
+					callback({ buf = buf })
+
+					-- use_default_mappings = true means the global, non-buffer_local
+					-- mappings are already bound by this point (see setup_test), so
+					-- zero total calls isn't the right assertion here -- only that
+					-- none of them are the disabled buffer-local one.
+					for _, call in ipairs(vim.keymap.set.calls) do
+						assert.are_not.equal("<leader>jp", call.vals[2])
+					end
+
+					vim.api.nvim_buf_delete(buf, { force = true })
+				end)
+			end)
+
+			jjournal.mappings["<leader>jp"] = original_spec
+			if not ok then error(err, 0) end
+		end)
 	end)
 
-	describe("preview buffer cleanup autocmd", function()
-		it("registers a BufWinLeave autocmd scoped recursively to the configured journal path", function()
+	describe("buffer cleanup and pinning autocmds", function()
+		it("registers a TextChanged/TextChangedI autocmd scoped recursively to the configured journal path", function()
 			setup_test({ api = { nvim_create_autocmd = true } }, function()
-				assert.stub(vim.api.nvim_create_autocmd).was_called(2)
 				local events = vim.api.nvim_create_autocmd.calls[2].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[2].vals[2]
+				assert.are.same({ "TextChanged", "TextChangedI" }, events)
+				assert.are.equal("/virtual/test/journal/path/**/*.md", opts.pattern)
+			end)
+		end)
+
+		it("pins a buffer the moment its text changes", function()
+			local callback = capture_autocmd_callback({ "TextChanged", "TextChangedI" })
+			setup_test(nil, function()
+				local buf = vim.api.nvim_create_buf(false, false)
+
+				callback({ buf = buf })
+
+				assert.is_true(vim.b[buf].jjournal_pinned)
+
+				vim.api.nvim_buf_delete(buf, { force = true })
+			end)
+		end)
+
+		it("registers a BufWinLeave autocmd scoped recursively to the configured journal path", function()
+			setup_test({ api = { nvim_create_autocmd = true } }, function()
+				assert.stub(vim.api.nvim_create_autocmd).was_called(3)
+				local events = vim.api.nvim_create_autocmd.calls[3].vals[1]
+				local opts = vim.api.nvim_create_autocmd.calls[3].vals[2]
 				assert.are.equal("BufWinLeave", events)
 				assert.are.equal("/virtual/test/journal/path/**/*.md", opts.pattern)
 			end)
 		end)
 
 		-- None of these use scratch buffers (nvim_create_buf's second arg):
-		-- real preview buffers, created in production via :edit/bufadd on an
-		-- actual file, are never scratch buffers, and scratch buffers are
-		-- documented to always report 'nomodified' regardless of content --
-		-- so a scratch buffer would make the "has been modified" spec below
-		-- pass for the wrong reason (unable to become modified at all) and
-		-- would leave the "unmodified" specs less representative of what
-		-- these buffers actually are in real use.
+		-- real journal buffers, created in production via :edit, are never
+		-- scratch buffers, and scratch buffers are documented to always
+		-- report 'nomodified' regardless of content -- so a scratch buffer
+		-- would leave the "edited, saved, then left" spec below unable to
+		-- exercise the case it's meant to (a real edit happening at all).
 		-- The actual wipe is deferred via vim.schedule (see register_autocmds),
 		-- so each spec below gives the event loop a tick via vim.wait after
 		-- invoking the callback, before asserting on the outcome.
-		it("wipes an unmodified preview buffer once it's no longer displayed anywhere", function()
+		it("wipes an unedited, unpinned buffer once it's no longer displayed anywhere, whether or not the file existed before opening", function()
 			local callback = capture_autocmd_callback("BufWinLeave")
 			setup_test({ fn = { win_findbuf = {} } }, function()
 				local buf = vim.api.nvim_create_buf(false, false)
-				vim.b[buf].jjournal_preview = true
 
 				callback({ buf = buf })
 				vim.wait(20)
@@ -884,14 +1017,17 @@ describe("jjournal.setup", function()
 			end)
 		end)
 
-		it("does not wipe a preview buffer that has been modified", function()
-			local callback = capture_autocmd_callback("BufWinLeave")
+		it("does not wipe a buffer that was edited at any point this visit, even though 'modified' is currently false", function()
+			local pin_callback = capture_autocmd_callback({ "TextChanged", "TextChangedI" })
+			local leave_callback = capture_autocmd_callback("BufWinLeave")
 			setup_test({ fn = { win_findbuf = {} } }, function()
 				local buf = vim.api.nvim_create_buf(false, false)
-				vim.b[buf].jjournal_preview = true
-				vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "edited" })
+				vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "written and saved" })
 
-				callback({ buf = buf })
+				pin_callback({ buf = buf }) -- the edit itself would have fired this
+				vim.api.nvim_buf_set_option(buf, "modified", false) -- simulates :w
+
+				leave_callback({ buf = buf })
 				vim.wait(20)
 
 				assert.is_true(vim.api.nvim_buf_is_valid(buf))
@@ -900,24 +1036,25 @@ describe("jjournal.setup", function()
 			end)
 		end)
 
-		it("does not wipe a preview buffer still displayed in another window", function()
+		it("does not wipe a buffer explicitly pinned via pin_buffer, even though it was never edited", function()
+			local leave_callback = capture_autocmd_callback("BufWinLeave")
+			setup_test({ fn = { win_findbuf = {} } }, function()
+				local buf = vim.api.nvim_create_buf(false, false)
+				vim.api.nvim_set_current_buf(buf)
+				jjournal.pin_buffer()
+
+				leave_callback({ buf = buf })
+				vim.wait(20)
+
+				assert.is_true(vim.api.nvim_buf_is_valid(buf))
+
+				vim.api.nvim_buf_delete(buf, { force = true })
+			end)
+		end)
+
+		it("does not wipe a buffer still displayed in another window", function()
 			local callback = capture_autocmd_callback("BufWinLeave")
 			setup_test({ fn = { win_findbuf = { 1001 } } }, function()
-				local buf = vim.api.nvim_create_buf(false, false)
-				vim.b[buf].jjournal_preview = true
-
-				callback({ buf = buf })
-				vim.wait(20)
-
-				assert.is_true(vim.api.nvim_buf_is_valid(buf))
-
-				vim.api.nvim_buf_delete(buf, { force = true })
-			end)
-		end)
-
-		it("does not touch a buffer that was never flagged as a preview", function()
-			local callback = capture_autocmd_callback("BufWinLeave")
-			setup_test({ fn = { win_findbuf = {} } }, function()
 				local buf = vim.api.nvim_create_buf(false, false)
 
 				callback({ buf = buf })

@@ -17,7 +17,7 @@ require("jjournal").setup({
 
 With `use_default_mappings = true` (the default), `gj` opens today's journal entry, `[jj`/`]jj` step one day at a time, `[j`/`]j` skip to the previous/next existing entry, `<leader>jj` prompts for a date, and `<leader>fj` searches the backlog.
 
-Opening a date that doesn't exist yet creates a disposable preview buffer: navigate away without editing it and it vanishes with no file written; start typing and it's kept like any other entry.
+Any journal buffer you haven't edited is closed automatically once you navigate away from it (no file written if it was never saved, no data lost if it was already on disk) — so browsing around doesn't leave a trail of open buffers behind. Editing a buffer keeps it around for good. To keep an unedited buffer open on purpose, `<leader>jp` pins it (only mapped inside journal buffers).
 
 See `:help jjournal` for the full config reference, all default mappings, and how to customize backlog search.
 

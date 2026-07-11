@@ -62,10 +62,10 @@ end
 
 ---Opens the journal entry for `date_str` with the Ex command `cmd`
 ---(default "edit"), creating its parent directory if needed. Warns and
----does nothing if `date_str` is nil. If the entry doesn't already exist on
----disk, the opened buffer is flagged jjournal_preview, so it can be
----auto-wiped later if left unedited (see register_autocmds' BufWinLeave
----autocmd).
+---does nothing if `date_str` is nil. Whether the opened buffer later gets
+---auto-wiped if left unedited is decided entirely by register_autocmds'
+---TextChanged/BufWinLeave autocmds, not here -- every journal buffer is
+---eligible, regardless of whether the file existed on disk already.
 ---@param date_str string|nil
 ---@param cmd string|nil
 M.open_date = function(date_str, cmd)
@@ -78,9 +78,7 @@ M.open_date = function(date_str, cmd)
   local dir = vim.fn.fnamemodify(full_path, ":h")
   if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
 
-  local is_new_entry = vim.fn.filereadable(full_path) == 0
   vim.cmd(string.format("%s %s", cmd or "edit", full_path))
-  if is_new_entry then vim.b[vim.fn.bufadd(full_path)].jjournal_preview = true end
 end
 
 ---Runs the configured search provider. See config.search.
@@ -92,12 +90,20 @@ M.search_backlog = function()
   )
 end
 
+---Marks the current buffer as pinned, exempting it from the
+---TextChanged/BufWinLeave auto-cleanup (see register_autocmds) regardless
+---of whether it's ever edited. One-way: there's no unpin -- close the
+---buffer yourself (:bdelete/:bwipeout) if you no longer want it kept.
+M.pin_buffer = function()
+  vim.b[0].jjournal_pinned = true
+end
+
 ---Runs one of the mapping actions directly: `target` is one of "today",
----"step_prev", "step_next", "skip_prev", "skip_next", "prompt", or
+---"step_prev", "step_next", "skip_prev", "skip_next", "prompt", "pin", or
 ---"search"; `cmd` is the Ex command used to open the result (e.g. "edit"
----or "vsplit"), ignored for "search". `count` is forwarded to
+---or "vsplit"), ignored for "pin"/"search". `count` is forwarded to
 ---resolve_date; see its docstring for what it means per target.
----@param target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"search"
+---@param target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"pin"|"search"
 ---@param cmd string|nil
 ---@param count integer|nil
 M.execute = function(target, cmd, count)
@@ -106,18 +112,25 @@ M.execute = function(target, cmd, count)
     return
   end
 
+  if target == "pin" then
+    M.pin_buffer()
+    return
+  end
+
   M.resolve_date(target, function(resolved_date) M.open_date(resolved_date, cmd) end, count)
 end
 
----Binds every entry in M.mappings in normal mode, unless
+---Binds every non-buffer_local entry in M.mappings in normal mode, unless
 ---use_default_mappings is false or the individual mapping was disabled.
 ---Forwards vim.v.count1 as execute()'s count -- targets that don't use a
----count (today/prompt/search) simply ignore it.
+---count (today/prompt/search/pin) simply ignore it. Buffer-local entries
+---(see JjournalMapping) are bound separately, per matching buffer -- see
+---bind_buffer_local_mappings.
 local function bind_mappings()
   if not M.config.use_default_mappings then return end
 
   for lhs, spec in pairs(M.mappings) do
-    if spec ~= false then
+    if spec ~= false and not spec.buffer_local then
       vim.keymap.set(
         "n",
         lhs,
@@ -128,13 +141,37 @@ local function bind_mappings()
   end
 end
 
+---Binds every buffer_local entry in M.mappings to `buf` specifically,
+---unless use_default_mappings is false or the individual mapping was
+---disabled. Pinning only means something for a buffer jjournal actually
+---manages, so unlike the global mappings in bind_mappings, this is called
+---per-buffer from the BufReadPost/BufNewFile autocmd rather than once at
+---setup() -- pressing <leader>jp anywhere else is simply not mapped at all,
+---rather than silently pinning some unrelated buffer.
+---@param buf integer
+local function bind_buffer_local_mappings(buf)
+  if not M.config.use_default_mappings then return end
+
+  for lhs, spec in pairs(M.mappings) do
+    if spec ~= false and spec.buffer_local then
+      vim.keymap.set(
+        "n",
+        lhs,
+        function() M.execute(spec.target, spec.cmd, vim.v.count1) end,
+        { desc = spec.desc, silent = true, buffer = buf }
+      )
+    end
+  end
+end
+
 ---Registers the autocmds that keep journal buffers tagged with their
----today/archive status, and clean up unedited preview buffers. See each
----callback below for its own reasoning.
+---today/archive status and buffer-local mappings bound, mark a buffer
+---pinned the moment it's edited, and clean up unpinned buffers once left.
+---See each callback below for its own reasoning.
 local function register_autocmds()
-  -- Created once and reused for both autocmds below: nvim_create_augroup's
+  -- Created once and reused for all three autocmds below: nvim_create_augroup's
   -- clear = true wipes the group's existing contents, so calling it a
-  -- second time here would erase the first autocmd we just registered.
+  -- second time here would erase the ones we just registered.
   local group = vim.api.nvim_create_augroup("JournalEngineCore", { clear = true })
   local pattern = path.normalize_base_dir(M.config.base_dir) .. "**/*" .. path.file_path_extension(M.config.file_path)
 
@@ -151,17 +188,28 @@ local function register_autocmds()
       else
         vim.b[current_buf].journal_status = "archive"
       end
+
+      bind_buffer_local_mappings(current_buf)
     end,
   })
 
-  -- Vim's own 'modified' state is enough to tell whether a preview buffer
-  -- has been genuinely edited -- no separate flag-stripping autocmd needed.
+  -- Editing is a permanent signal for this buffer's lifetime, not a live
+  -- read of Vim's own 'modified' state at cleanup time: 'modified' resets
+  -- to false on :w (or a full undo back to the save point), which would
+  -- otherwise make a buffer someone genuinely wrote in and saved look
+  -- indistinguishable from one that was never touched.
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI" }, {
+    group = group,
+    pattern = pattern,
+    callback = function(args) vim.b[args.buf].jjournal_pinned = true end,
+  })
+
   vim.api.nvim_create_autocmd("BufWinLeave", {
     group = group,
     pattern = pattern,
     callback = function(args)
       local buf = args.buf
-      if not vim.b[buf].jjournal_preview then return end
+      if vim.b[buf].jjournal_pinned then return end
 
       -- Deferred to the next event-loop tick: wiping the buffer
       -- synchronously here -- while Vim is still mid-transition away from
@@ -173,7 +221,6 @@ local function register_autocmds()
       -- with no need to account for the leaving window still counting.
       vim.schedule(function()
         if not vim.api.nvim_buf_is_valid(buf) then return end
-        if vim.api.nvim_buf_get_option(buf, "modified") then return end
         if #vim.fn.win_findbuf(buf) > 0 then return end
 
         vim.cmd("bwipeout " .. buf)
@@ -183,8 +230,9 @@ local function register_autocmds()
 end
 
 ---@class JjournalMapping
----@field target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"search"
+---@field target "today"|"step_prev"|"step_next"|"skip_prev"|"skip_next"|"prompt"|"pin"|"search"
 ---@field desc string
+---@field buffer_local boolean|nil Bound only within buffers jjournal manages (see bind_buffer_local_mappings), rather than globally. Omit/false for the default, global binding.
 
 ---Default mappings bound when config.use_default_mappings is true. Set an
 ---entry to `false` before calling setup() to disable it individually. None
@@ -200,6 +248,7 @@ M.mappings = {
   ["<leader>fj"] = { target = "search", desc = "Search journal backlog (grep)" },
 
   ["<leader>jj"] = { target = "prompt", desc = "Jump to journal date" },
+  ["<leader>jp"] = { target = "pin", desc = "Pin the current journal buffer", buffer_local = true },
 }
 
 ---Merges `opts` into the current config and (re-)binds mappings and

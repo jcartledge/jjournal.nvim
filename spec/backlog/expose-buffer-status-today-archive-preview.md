@@ -24,6 +24,7 @@
 
 * Retire the existing unused `journal_status` var entirely in favor of one unified `jjournal_status` var + `status()` function, rather than keeping both around.
 * Add a short lualine snippet to the README as documentation only (no shipped dependency), per the "buffer-local var + thin function, no forced UI" direction already agreed on.
+* **Superseded by `pin-buffers-to-exempt-from-auto-cleanup.md`:** `jjournal_preview` no longer exists -- it's been replaced by `jjournal_pinned`, which means something broader ("protected from auto-cleanup," true for an edited buffer or an explicitly-pinned one) rather than "unwritten draft." A buffer showing real, previously-written content that you've merely passed through without editing is now *also* unpinned and cleanup-eligible, which doesn't fit the old `"preview"` label (that implied blank/draft content specifically). Whether this story's third status value should become `"unpinned"`/`"pinned"` instead of `"preview"`, or whether "preview" still has meaning as a narrower case (unpinned *and* the file didn't exist when opened), needs deciding before picking this up -- the acceptance criteria and test cases below still describe the old two-state (preview vs. not) model and should be revisited first.
 
 ### **Busted Test Cases**
 

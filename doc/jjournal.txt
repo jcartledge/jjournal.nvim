@@ -110,7 +110,13 @@ Bound in normal mode when `use_default_mappings = true` (the default):
     [j              Skip to the previous existing entry.
     ]j              Skip to the next existing entry.
     <leader>jj      Prompt for a date and open it.
+    <leader>jp      Pin the current journal buffer. See below.
     <leader>fj      Search the journal backlog. See |jjournal-search|.
+
+`<leader>jp` is only mapped inside buffers jjournal manages (bound per
+buffer as it's opened, unlike every other mapping above, which is bound
+globally at |jjournal.setup()|) -- pressing it anywhere else does
+nothing, since pinning has no meaning outside a journal buffer.
 
 Stepping ([jj/]jj) shifts the current date by exactly one day in that
 direction and opens it, creating it if it doesn't exist yet -- useful
@@ -126,12 +132,21 @@ the nearest one. With no count, both default to 1, matching the
 behavior above. A count on `gj`, `<leader>jj`, or `<leader>fj` has no
 effect.
 
-Opening a date that doesn't exist on disk yet -- by any mapping, not
-just stepping -- opens it as a disposable preview: if you navigate away
-without typing anything into it, it's discarded automatically (no
-buffer left behind, no file written). Starting to type in it makes it a
-normal, permanent entry like any other, kept exactly as if you'd opened
-it directly.
+Any journal buffer you haven't edited is closed automatically the
+moment you navigate away from it, whether or not the file already
+existed on disk -- if it never existed, nothing is written; if it did,
+the file itself is untouched, only the buffer goes away. Editing it at
+any point (even if you save and then navigate away with no unsaved
+changes left) keeps it open for good from then on -- editing is a
+one-way signal, not a live check of whether the buffer currently has
+unsaved changes.
+
+To keep an unedited buffer open on purpose -- e.g. an old entry you
+want to keep referring back to -- `<leader>jp` pins it. There's no
+unpin: close the buffer yourself (|:bdelete| or |:bwipeout|) if you
+change your mind. A buffer still visible in another window is never
+closed regardless of pin state, so splitting to view two entries side
+by side needs no special handling.
 
 To disable a single mapping while keeping the rest, set it to `false` on
 `require("jjournal").mappings` before calling `setup()`: >lua
@@ -184,10 +199,10 @@ setup({opts})
                                                           *jjournal.execute()*
 execute({target}, {cmd}, {count})
     Runs one of the mapping actions directly: {target} is one of "today",
-    "step_prev", "step_next", "skip_prev", "skip_next", "prompt", or
+    "step_prev", "step_next", "skip_prev", "skip_next", "prompt", "pin", or
     "search"; {cmd} is the Ex command used to open the result (e.g. "edit"
-    or "vsplit"), ignored for "search". {count} (default 1) is forwarded
-    to |jjournal.resolve_date()|.
+    or "vsplit"), ignored for "pin"/"search". {count} (default 1) is
+    forwarded to |jjournal.resolve_date()|, ignored for "pin"/"search".
 
                                                      *jjournal.resolve_date()*
 resolve_date({target}, {callback}, {count})
@@ -211,6 +226,12 @@ resolve_path({date_str})
                                                    *jjournal.search_backlog()*
 search_backlog()
     Runs the configured search provider. See |jjournal-search|.
+
+                                                       *jjournal.pin_buffer()*
+pin_buffer()
+    Marks the current buffer as pinned, exempting it from the
+    auto-cleanup described in |jjournal-mappings| regardless of whether
+    it's ever edited. One-way: there's no unpin.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:
