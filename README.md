@@ -88,3 +88,7 @@ spec/           -- user stories, tracked as they move backlog -> todo -> doing -
 ```
 
 See `CLAUDE.md` for how work is planned and tracked as user stories under `spec/`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
