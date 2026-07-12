@@ -61,9 +61,13 @@ M.resolve_path = function(date_str)
 end
 
 ---Opens the journal entry for `date_str` with the Ex command `cmd`
----(default "edit"), creating its parent directory if needed. Warns and
----does nothing if `date_str` is nil. Whether the opened buffer later gets
----auto-wiped if left unedited is decided entirely by register_autocmds'
+---(default "edit"). Warns and does nothing if `date_str` is nil. Does NOT
+---create the parent directory -- Neovim only needs it to exist at write
+---time, not open time, so that's deferred to register_autocmds'
+---BufWritePre autocmd instead; creating it here eagerly would risk leaving
+---an empty, orphaned directory behind for a buffer that's opened and later
+---discarded unsaved. Whether the opened buffer later gets auto-wiped if
+---left unedited is decided entirely by register_autocmds'
 ---TextChanged/BufWinLeave autocmds, not here -- every journal buffer is
 ---eligible, regardless of whether the file existed on disk already.
 ---@param date_str string|nil
@@ -74,11 +78,7 @@ M.open_date = function(date_str, cmd)
     return
   end
 
-  local full_path = M.resolve_path(date_str)
-  local dir = vim.fn.fnamemodify(full_path, ":h")
-  if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
-
-  vim.cmd(string.format("%s %s", cmd or "edit", full_path))
+  vim.cmd(string.format("%s %s", cmd or "edit", M.resolve_path(date_str)))
 end
 
 ---Runs the configured search provider. See config.search.
@@ -166,10 +166,11 @@ end
 
 ---Registers the autocmds that stamp journal buffers with jjournal_entry/
 ---jjournal_date and bind their buffer-local mappings, mark a buffer pinned
----the moment it's edited, and clean up unpinned buffers once left. See
----each callback below for its own reasoning.
+---the moment it's edited, clean up unpinned buffers once left, and create
+---a buffer's parent directory just before it's first written. See each
+---callback below for its own reasoning.
 local function register_autocmds()
-  -- Created once and reused for all three autocmds below: nvim_create_augroup's
+  -- Created once and reused for all four autocmds below: nvim_create_augroup's
   -- clear = true wipes the group's existing contents, so calling it a
   -- second time here would erase the ones we just registered.
   local group = vim.api.nvim_create_augroup("JournalEngineCore", { clear = true })
@@ -232,6 +233,20 @@ local function register_autocmds()
 
         vim.cmd("bwipeout " .. buf)
       end)
+    end,
+  })
+
+  -- Deliberately deferred to write time rather than done eagerly in
+  -- open_date: :edit succeeds regardless of whether the parent directory
+  -- exists (verified against real Vim), and only :write actually needs
+  -- it, so creating it here means a buffer that's opened and discarded
+  -- unsaved never creates a directory at all.
+  vim.api.nvim_create_autocmd("BufWritePre", {
+    group = group,
+    pattern = pattern,
+    callback = function(args)
+      local dir = vim.fn.fnamemodify(args.file, ":h")
+      if vim.fn.isdirectory(dir) == 0 then vim.fn.mkdir(dir, "p") end
     end,
   })
 end

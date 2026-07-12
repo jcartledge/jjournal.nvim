@@ -305,11 +305,8 @@ describe("jjournal.prompt_for_date", function()
 end)
 
 describe("jjournal.open_date", function()
-	-- Most specs here just need the parent directory to already exist, so the
-	-- mkdir check is a no-op; override fn.isdirectory to exercise that path.
 	local function setup_open_date_test(overrides, test_fn)
 		setup_test(vim.tbl_deep_extend("force", {
-			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, overrides or {}), test_fn)
 	end
@@ -348,36 +345,19 @@ describe("jjournal.open_date", function()
 		end)
 	end)
 
-	it("creates the parent directory before opening, when it doesn't exist yet", function()
-		local calls = {}
-		setup_open_date_test({
-			fn = {
-				isdirectory = 0,
-				mkdir = function(dir, flags)
-					table.insert(calls, { "mkdir", dir, flags })
-				end,
-			},
-			vim = {
-				cmd = function(command)
-					table.insert(calls, { "cmd", command })
-				end,
-			},
-		}, function()
-			jjournal.open_date("2026-07-09", "edit")
-
-			assert.are.same({
-				{ "mkdir", "/virtual/test/journal/path", "p" },
-				{ "cmd", "edit /virtual/test/journal/path/2026-07-09.md" },
-			}, calls)
-		end)
-	end)
-
-	it("does not create the parent directory when it already exists", function()
+	-- Directory creation is deliberately NOT open_date's job -- see the
+	-- "just-in-time directory creation" describe block below. Opening a
+	-- buffer for a path whose parent directory doesn't exist yet is valid
+	-- Neovim behavior on its own (verified against real Vim: :edit succeeds
+	-- regardless, only :write needs the directory to exist) -- so
+	-- open_date creating it eagerly would risk leaving an empty, orphaned
+	-- directory behind for a buffer that's opened and later discarded
+	-- unsaved (e.g. an auto-wiped, never-edited preview).
+	it("does not create any directory when opening a buffer", function()
 		setup_open_date_test({ fn = { mkdir = true } }, function()
 			jjournal.open_date("2026-07-09", "edit")
 
 			assert.stub(vim.fn.mkdir).was_not_called()
-			assert.stub(vim.cmd).was_called_with("edit /virtual/test/journal/path/2026-07-09.md")
 		end)
 	end)
 end)
@@ -752,12 +732,13 @@ describe("jjournal.setup", function()
 	describe("journal buffer status autocmd", function()
 		it("registers a BufReadPost/BufNewFile autocmd scoped recursively to the configured journal path", function()
 			setup_test({ api = { nvim_create_autocmd = true } }, function()
-				-- Called three times total: this autocmd plus the pin-on-edit and
-				-- BufWinLeave cleanup autocmds registered alongside it (see the
-				-- "buffer cleanup and pinning autocmds" describe block below) --
-				-- all three sharing the same augroup and pattern, registered in
-				-- this order.
-				assert.stub(vim.api.nvim_create_autocmd).was_called(3)
+				-- Called four times total: this autocmd plus the pin-on-edit,
+				-- BufWinLeave cleanup, and just-in-time mkdir autocmds registered
+				-- alongside it (see the "buffer cleanup and pinning autocmds" and
+				-- "just-in-time directory creation" describe blocks below) -- all
+				-- four sharing the same augroup and pattern, registered in this
+				-- order.
+				assert.stub(vim.api.nvim_create_autocmd).was_called(4)
 				local events = vim.api.nvim_create_autocmd.calls[1].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
 				assert.are.same({ "BufReadPost", "BufNewFile" }, events)
@@ -1000,7 +981,7 @@ describe("jjournal.setup", function()
 
 		it("registers a BufWinLeave autocmd scoped recursively to the configured journal path", function()
 			setup_test({ api = { nvim_create_autocmd = true } }, function()
-				assert.stub(vim.api.nvim_create_autocmd).was_called(3)
+				assert.stub(vim.api.nvim_create_autocmd).was_called(4)
 				local events = vim.api.nvim_create_autocmd.calls[3].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[3].vals[2]
 				assert.are.equal("BufWinLeave", events)
@@ -1076,6 +1057,72 @@ describe("jjournal.setup", function()
 
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
+		end)
+	end)
+
+	describe("just-in-time directory creation", function()
+		it("registers a BufWritePre autocmd scoped recursively to the configured journal path", function()
+			setup_test({ api = { nvim_create_autocmd = true } }, function()
+				local events = vim.api.nvim_create_autocmd.calls[4].vals[1]
+				local opts = vim.api.nvim_create_autocmd.calls[4].vals[2]
+				assert.are.equal("BufWritePre", events)
+				assert.are.equal("/virtual/test/journal/path/**.md", opts.pattern)
+			end)
+		end)
+
+		it("creates the parent directory when it doesn't exist yet, just before the write", function()
+			local callback = capture_autocmd_callback("BufWritePre")
+			setup_test({
+				fn = { isdirectory = 0, mkdir = true },
+			}, function()
+				callback({ buf = 0, file = "/virtual/test/journal/path/2026/07/2026-07-09.md" })
+
+				assert.stub(vim.fn.mkdir).was_called_with("/virtual/test/journal/path/2026/07", "p")
+			end)
+		end)
+
+		it("does not create the directory when it already exists", function()
+			local callback = capture_autocmd_callback("BufWritePre")
+			setup_test({
+				fn = { isdirectory = 1, mkdir = true },
+			}, function()
+				callback({ buf = 0, file = "/virtual/test/journal/path/2026-07-09.md" })
+
+				assert.stub(vim.fn.mkdir).was_not_called()
+			end)
+		end)
+
+		-- Deliberately real and unmocked, in the style of the flat/nested
+		-- autocmd-pattern tests in fix-autocmd-pattern-for-flat-layouts.md: a
+		-- mocked BufWritePre callback invocation would prove the mkdir call
+		-- happens, but not that a real :write against a genuinely missing
+		-- directory actually succeeds afterward -- that's the real Neovim
+		-- behavior this design depends on (verified empirically against real
+		-- Vim before implementing: :edit succeeds regardless of whether the
+		-- parent directory exists; only :write needs it to).
+		it("lets a real :write succeed for a real file whose parent directory doesn't exist yet", function()
+			local tmp_dir = vim.fn.tempname()
+			vim.fn.mkdir(tmp_dir, "p")
+			local file_path = tmp_dir .. "/2026/07/2026-07-09.md"
+
+			local ok, err = pcall(function()
+				setup_test({
+					config = { base_dir = tmp_dir .. "/", file_path = "%Y/%m/%Y-%m-%d.md" },
+				}, function()
+					vim.cmd("edit " .. file_path)
+					assert.are.equal(0, vim.fn.isdirectory(tmp_dir .. "/2026/07"))
+
+					vim.cmd("write")
+
+					assert.are.equal(1, vim.fn.isdirectory(tmp_dir .. "/2026/07"))
+					assert.are.equal(1, vim.fn.filereadable(file_path))
+
+					vim.cmd("bwipeout! " .. vim.api.nvim_get_current_buf())
+				end)
+			end)
+
+			vim.fn.delete(tmp_dir, "rf")
+			if not ok then error(err, 0) end
 		end)
 	end)
 end)

@@ -69,7 +69,9 @@ file_path~
         %D      shorthand for the full date, i.e. `%Y-%m-%d`
 
     `/` in the template creates nested directories (created automatically
-    when an entry is first opened). For example: >lua
+    the first time an entry is written, not when it's opened -- so merely
+    opening and discarding an unwritten entry never creates one). For
+    example: >lua
 
         file_path = "%Y/%m/%Y-%m-%d.md"    -- nested by year/month
         file_path = "%Y/%m/%d/journal-%D.txt"  -- year/month/day dirs,
