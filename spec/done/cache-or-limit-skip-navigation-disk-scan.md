@@ -15,3 +15,16 @@ Spotted while implementing `support-count-prefix-step-navigation.md` (a count-pr
 ### **Acceptance Criteria**
 
 Not yet written — deferred until the open questions above are resolved and a specific approach is chosen.
+
+### **Resolution: measured, not a real problem — closed 2026-07-12**
+
+Answered the third open question above directly: benchmarked `vim.fn.glob(base_dir .. "**/*", ...)` plus the parse-and-sort step that follows it, against real synthetic journal directories, using the default nested `%Y/%m/%Y-%m-%d.md` layout (a flat layout was also measured and performs almost identically — total file count dominates, not directory structure):
+
+* 100 entries: ~1.5ms total
+* 1,000 entries (~3 years of daily journaling): ~16ms
+* 5,000 entries (~14 years): ~80ms
+* 20,000 entries (~55 years): ~325ms (roughly two-thirds `glob()`, one-third parse/sort)
+
+At any realistically-sized journal — even 15-20 years of daily entries — a single skip keypress costs well under 100ms, imperceptible in practice. It only becomes a barely-noticeable pause at the 20,000-entry mark, representing over half a century of unarchived daily entries in one journal. This confirms the use case's own speculation: `vim.fn.glob` is fast enough in practice that this pattern isn't a real problem at any scale a single daily journal is likely to reach.
+
+Decision: close without implementing either option from the first open question (caching, or bounding the scan to date-partitioned subdirectories). Both carry real ongoing complexity cost — cache invalidation is the classically hard part of caching, and directory-bounded scanning only helps when `file_path` happens to nest by date, so it'd be an asymmetric optimization for a cost that isn't currently real. Revisit if an actual usage pattern (e.g. multiple entries per day sustained over decades, or a shared/team journal) ever makes this measurably bite — the benchmark methodology above (synthetic directories generated via a script, timed with real `glob()` calls) is reusable if that happens.
