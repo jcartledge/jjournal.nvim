@@ -10,7 +10,12 @@ local M = {}
 ---Pinpoints the current YYYY-MM-DD anchor string based on the active window
 ---context. Only trusts the buffer's own name if it actually lives inside
 ---(at or below) the configured journal base_dir -- an unrelated date-named
----file elsewhere shouldn't be treated as the navigation anchor.
+---file elsewhere shouldn't be treated as the navigation anchor. The
+---fallback to today only actually triggers for a caller invoking
+---resolve_date/execute directly from outside the journal path (e.g. a
+---custom global mapping with use_default_mappings = false) -- the default
+---step/skip mappings are buffer_local, so they can't reach this function
+---from outside the path to begin with.
 ---@param base_dir string
 ---@return string
 local function current_anchor_date(base_dir)

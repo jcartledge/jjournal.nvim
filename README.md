@@ -15,9 +15,9 @@ require("jjournal").setup({
 })
 ```
 
-With `use_default_mappings = true` (the default), `gj` opens today's journal entry, `[jj`/`]jj` step one day at a time, `[j`/`]j` skip to the previous/next existing entry, `<leader>jj` prompts for a date, and `<leader>fj` searches the backlog.
+With `use_default_mappings = true` (the default), `gj` opens today's journal entry, `[jj`/`]jj` step one day at a time, `[j`/`]j` skip to the previous/next existing entry, `<leader>jj` prompts for a date, and `<leader>fj` searches the backlog. `[jj`/`]jj`/`[j`/`]j` and `<leader>jp` (pinning, below) are only mapped inside journal buffers, since they only mean something relative to an entry you're already in; `gj`/`<leader>jj`/`<leader>fj` work from anywhere as entry points into the journal.
 
-Any journal buffer you haven't edited is closed automatically once you navigate away from it (no file written if it was never saved, no data lost if it was already on disk) — so browsing around doesn't leave a trail of open buffers behind. Editing a buffer keeps it around for good. To keep an unedited buffer open on purpose, `<leader>jp` pins it (only mapped inside journal buffers).
+Any journal buffer you haven't edited is closed automatically once you navigate away from it (no file written if it was never saved, no data lost if it was already on disk) — so browsing around doesn't leave a trail of open buffers behind. Editing a buffer keeps it around for good. To keep an unedited buffer open on purpose, `<leader>jp` pins it.
 
 See `:help jjournal` for the full config reference, all default mappings, and how to customize backlog search.
 

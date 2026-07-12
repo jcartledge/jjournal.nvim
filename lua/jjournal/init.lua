@@ -143,11 +143,11 @@ end
 
 ---Binds every buffer_local entry in M.mappings to `buf` specifically,
 ---unless use_default_mappings is false or the individual mapping was
----disabled. Pinning only means something for a buffer jjournal actually
----manages, so unlike the global mappings in bind_mappings, this is called
----per-buffer from the BufReadPost/BufNewFile autocmd rather than once at
----setup() -- pressing <leader>jp anywhere else is simply not mapped at all,
----rather than silently pinning some unrelated buffer.
+---disabled. Step, skip, and pin only mean something for a buffer jjournal
+---actually manages, so unlike the global mappings in bind_mappings, these
+---are called per-buffer from the BufReadPost/BufNewFile autocmd rather than
+---once at setup() -- pressing one of these keys anywhere else is simply not
+---mapped at all, rather than silently acting on some unrelated buffer.
 ---@param buf integer
 local function bind_buffer_local_mappings(buf)
   if not M.config.use_default_mappings then return end
@@ -241,10 +241,10 @@ end
 ---@type table<string, JjournalMapping|false>
 M.mappings = {
   ["gj"] = { target = "today", desc = "Go to today's journal" },
-  ["[jj"] = { target = "step_prev", desc = "Step to previous day" },
-  ["]jj"] = { target = "step_next", desc = "Step to next day" },
-  ["[j"] = { target = "skip_prev", desc = "Skip to previous entry" },
-  ["]j"] = { target = "skip_next", desc = "Skip to next entry" },
+  ["[jj"] = { target = "step_prev", desc = "Step to previous day", buffer_local = true },
+  ["]jj"] = { target = "step_next", desc = "Step to next day", buffer_local = true },
+  ["[j"] = { target = "skip_prev", desc = "Skip to previous entry", buffer_local = true },
+  ["]j"] = { target = "skip_next", desc = "Skip to next entry", buffer_local = true },
   ["<leader>fj"] = { target = "search", desc = "Search journal backlog (grep)" },
 
   ["<leader>jj"] = { target = "prompt", desc = "Jump to journal date" },

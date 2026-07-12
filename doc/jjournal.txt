@@ -113,10 +113,15 @@ Bound in normal mode when `use_default_mappings = true` (the default):
     <leader>jp      Pin the current journal buffer. See below.
     <leader>fj      Search the journal backlog. See |jjournal-search|.
 
-`<leader>jp` is only mapped inside buffers jjournal manages (bound per
-buffer as it's opened, unlike every other mapping above, which is bound
-globally at |jjournal.setup()|) -- pressing it anywhere else does
-nothing, since pinning has no meaning outside a journal buffer.
+`[jj`/`]jj`/`[j`/`]j`/`<leader>jp` are only mapped inside buffers
+jjournal manages (bound per buffer as it's opened, rather than globally
+at |jjournal.setup()| like `gj`/`<leader>jj`/`<leader>fj`) -- pressing
+one of them anywhere else does nothing. Stepping and skipping are
+relative to wherever you currently are, and pinning only means
+something for a buffer jjournal already manages, so none of them are
+useful (or, for pinning, even meaningful) outside a journal buffer --
+unlike `gj`/`<leader>jj`/`<leader>fj`, which are entry points meant to
+work from anywhere.
 
 Stepping ([jj/]jj) shifts the current date by exactly one day in that
 direction and opens it, creating it if it doesn't exist yet -- useful

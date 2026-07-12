@@ -133,6 +133,12 @@ describe("jjournal.resolve_date", function()
 		end)
 	end)
 
+	-- The default step/skip mappings are buffer_local (see bind_buffer_local_mappings),
+	-- so pressing one of them from outside a journal buffer is no longer
+	-- possible -- these two specs exercise resolve_date's own defensive
+	-- fallback directly instead, which still matters for anyone calling
+	-- execute()/resolve_date() themselves (e.g. custom global mappings with
+	-- use_default_mappings = false).
 	it("falls back to today when the current buffer is date-named but outside the journal path", function()
 		setup_resolve_date_test({
 			fn = { strftime = "2026-07-10" },
@@ -749,10 +755,14 @@ describe("jjournal.setup", function()
 		end)
 	end)
 
-	it("does not bind a buffer_local mapping globally", function()
+	it("does not bind any buffer_local mapping globally", function()
 		setup_setup_test({ config = { use_default_mappings = true } }, function()
-			for _, call in ipairs(vim.keymap.set.calls) do
-				assert.are_not.equal("<leader>jp", call.vals[2])
+			for lhs, spec in pairs(jjournal.mappings) do
+				if spec ~= false and spec.buffer_local then
+					for _, call in ipairs(vim.keymap.set.calls) do
+						assert.are_not.equal(lhs, call.vals[2])
+					end
+				end
 			end
 		end)
 	end)
@@ -875,11 +885,12 @@ describe("jjournal.setup", function()
 			end)
 		end)
 
-		-- Pinning only means something for a buffer jjournal actually manages,
-		-- so unlike the rest of the default mappings, <leader>jp is bound
-		-- per-buffer from this same autocmd rather than globally at setup() --
-		-- see "does not bind a buffer_local mapping globally" above.
-		it("binds buffer-local mappings when a journal buffer is opened, wired to execute the right target/cmd/count, with its desc", function()
+		-- Step, skip, and pin only mean something for a buffer jjournal
+		-- actually manages, so unlike the rest of the default mappings, each
+		-- buffer_local entry is bound per-buffer from this same autocmd rather
+		-- than globally at setup() -- see "does not bind any buffer_local
+		-- mapping globally" above.
+		it("binds every buffer_local mapping when a journal buffer is opened, wired to execute the right target/cmd/count, with its desc", function()
 			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
 			setup_test({
 				fn = { strftime = "2026-07-10" },
@@ -892,22 +903,23 @@ describe("jjournal.setup", function()
 
 				callback({ buf = buf })
 
-				local matched
-				for _, call in ipairs(vim.keymap.set.calls) do
-					if call.vals[1] == "n" and call.vals[2] == "<leader>jp" then
-						matched = call
-						break
+				for lhs, spec in pairs(jjournal.mappings) do
+					if spec ~= false and spec.buffer_local then
+						local matched
+						for _, call in ipairs(vim.keymap.set.calls) do
+							if call.vals[1] == "n" and call.vals[2] == lhs then
+								matched = call
+								break
+							end
+						end
+
+						assert.is_not_nil(matched, "expected a buffer-local keymap.set call for " .. lhs)
+						assert.are.same({ desc = spec.desc, silent = true, buffer = buf }, matched.vals[4])
+
+						matched.vals[3]() -- invoke the bound handler as if the key had been pressed
+						assert.stub(jjournal.execute).was_called_with(spec.target, spec.cmd, vim.v.count1)
 					end
 				end
-
-				assert.is_not_nil(matched, "expected a buffer-local keymap.set call for <leader>jp")
-				assert.are.same(
-					{ desc = jjournal.mappings["<leader>jp"].desc, silent = true, buffer = buf },
-					matched.vals[4]
-				)
-
-				matched.vals[3]() -- invoke the bound handler as if the key had been pressed
-				assert.stub(jjournal.execute).was_called_with("pin", nil, vim.v.count1)
 
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
