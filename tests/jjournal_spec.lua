@@ -817,7 +817,7 @@ describe("jjournal.setup", function()
 				local events = vim.api.nvim_create_autocmd.calls[1].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
 				assert.are.same({ "BufReadPost", "BufNewFile" }, events)
-				assert.are.equal("/virtual/test/journal/path/**/*.md", opts.pattern)
+				assert.are.equal("/virtual/test/journal/path/**.md", opts.pattern)
 			end)
 		end)
 
@@ -827,7 +827,7 @@ describe("jjournal.setup", function()
 				config = { file_path = "%Y/%m/%d/journal-%D.txt" },
 			}, function()
 				local opts = vim.api.nvim_create_autocmd.calls[1].vals[2]
-				assert.are.equal("/virtual/test/journal/path/**/*.txt", opts.pattern)
+				assert.are.equal("/virtual/test/journal/path/**.txt", opts.pattern)
 			end)
 		end)
 
@@ -883,6 +883,69 @@ describe("jjournal.setup", function()
 
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
+		end)
+
+		-- These two deviate deliberately from the mock-only convention used
+		-- everywhere else in this file: every other spec here mocks
+		-- nvim_create_autocmd and invokes the captured callback manually,
+		-- which never exercises Neovim's own autocmd-pattern matching.
+		-- register_autocmds previously built that pattern as "**/*" .. ext,
+		-- which Neovim's real pattern matching requires at least one
+		-- subdirectory between base_dir and the filename to satisfy -- so it
+		-- silently never matched a flat (non-nested) file_path layout like
+		-- the one these tests use. Only real files, a real (unmocked)
+		-- nvim_create_autocmd, and a real :edit can catch that; a mocked
+		-- callback invocation would pass either way.
+		it("tags a real buffer for a flat (non-nested) file_path layout via a real, unmocked autocmd", function()
+			local tmp_dir = vim.fn.tempname()
+			vim.fn.mkdir(tmp_dir, "p")
+			local file_path = tmp_dir .. "/2026-06-02.md"
+			vim.fn.writefile({ "content" }, file_path)
+
+			-- setup_test re-raises on a failing assertion inside test_fn, so
+			-- deleting tmp_dir has to happen via pcall here too -- otherwise a
+			-- failing assertion below would skip the cleanup on its way out
+			-- and leak the temp directory.
+			local ok, err = pcall(function()
+				setup_test({
+					config = { base_dir = tmp_dir .. "/", file_path = "%Y-%m-%d.md" },
+				}, function()
+					vim.cmd("edit " .. file_path)
+					local buf = vim.api.nvim_get_current_buf()
+
+					assert.is_not_nil(vim.b[buf].journal_status)
+
+					vim.cmd("bwipeout! " .. buf)
+				end)
+			end)
+
+			vim.fn.delete(tmp_dir, "rf")
+			if not ok then error(err, 0) end
+		end)
+
+		it("still tags a real buffer for a nested file_path layout via a real, unmocked autocmd", function()
+			local tmp_dir = vim.fn.tempname()
+			local nested_dir = tmp_dir .. "/2026/06"
+			vim.fn.mkdir(nested_dir, "p")
+			local file_path = nested_dir .. "/2026-06-02.md"
+			vim.fn.writefile({ "content" }, file_path)
+
+			-- See the pcall note in the flat-layout spec above -- same reason.
+			local ok, err = pcall(function()
+				setup_test({
+					config = { base_dir = tmp_dir .. "/", file_path = "%Y/%m/%Y-%m-%d.md" },
+				}, function()
+					vim.cmd("edit " .. file_path)
+					local buf = vim.api.nvim_get_current_buf()
+
+					assert.is_not_nil(vim.b[buf].journal_status)
+
+					vim.cmd("bwipeout! " .. buf)
+				end)
+			end)
+
+			vim.fn.delete(tmp_dir, "rf")
+			if not ok then error(err, 0) end
 		end)
 
 		-- Step, skip, and pin only mean something for a buffer jjournal
@@ -981,7 +1044,7 @@ describe("jjournal.setup", function()
 				local events = vim.api.nvim_create_autocmd.calls[2].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[2].vals[2]
 				assert.are.same({ "TextChanged", "TextChangedI" }, events)
-				assert.are.equal("/virtual/test/journal/path/**/*.md", opts.pattern)
+				assert.are.equal("/virtual/test/journal/path/**.md", opts.pattern)
 			end)
 		end)
 
@@ -1004,7 +1067,7 @@ describe("jjournal.setup", function()
 				local events = vim.api.nvim_create_autocmd.calls[3].vals[1]
 				local opts = vim.api.nvim_create_autocmd.calls[3].vals[2]
 				assert.are.equal("BufWinLeave", events)
-				assert.are.equal("/virtual/test/journal/path/**/*.md", opts.pattern)
+				assert.are.equal("/virtual/test/journal/path/**.md", opts.pattern)
 			end)
 		end)
 

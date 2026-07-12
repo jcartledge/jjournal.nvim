@@ -173,7 +173,12 @@ local function register_autocmds()
   -- clear = true wipes the group's existing contents, so calling it a
   -- second time here would erase the ones we just registered.
   local group = vim.api.nvim_create_augroup("JournalEngineCore", { clear = true })
-  local pattern = path.normalize_base_dir(M.config.base_dir) .. "**/*" .. path.file_path_extension(M.config.file_path)
+  -- "**" .. ext (not "**/*" .. ext): autocmd-pattern's ** requires at least
+  -- one subdirectory between base_dir and the filename to match, so the
+  -- "/*" variant silently never matches a flat (non-nested) file_path
+  -- layout with zero subdirectories. "**" alone matches both flat and
+  -- nested paths correctly.
+  local pattern = path.normalize_base_dir(M.config.base_dir) .. "**" .. path.file_path_extension(M.config.file_path)
 
   vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
     group = group,
