@@ -39,9 +39,9 @@ M.resolve_date = function(target, callback, count)
   if target == "today" then
     callback(vim.fn.strftime "%F")
   elseif target == "step_prev" then
-    callback(dates.step(M.config.base_dir, -1, count))
+    callback(dates.step(-1, count))
   elseif target == "step_next" then
-    callback(dates.step(M.config.base_dir, 1, count))
+    callback(dates.step(1, count))
   elseif target == "skip_prev" then
     callback(dates.skip(M.config.base_dir, -1, count))
   elseif target == "skip_next" then
@@ -164,10 +164,10 @@ local function bind_buffer_local_mappings(buf)
   end
 end
 
----Registers the autocmds that keep journal buffers tagged with their
----today/archive status and buffer-local mappings bound, mark a buffer
----pinned the moment it's edited, and clean up unpinned buffers once left.
----See each callback below for its own reasoning.
+---Registers the autocmds that stamp journal buffers with jjournal_entry/
+---jjournal_date and bind their buffer-local mappings, mark a buffer pinned
+---the moment it's edited, and clean up unpinned buffers once left. See
+---each callback below for its own reasoning.
 local function register_autocmds()
   -- Created once and reused for all three autocmds below: nvim_create_augroup's
   -- clear = true wipes the group's existing contents, so calling it a
@@ -185,14 +185,16 @@ local function register_autocmds()
     pattern = pattern,
     callback = function(args)
       local current_buf = args.buf
-      local current_path = vim.api.nvim_buf_get_name(current_buf)
-      local today_path = M.resolve_path(vim.fn.strftime "%F")
+      local filename = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(current_buf), ":t")
 
-      if vim.fn.fnamemodify(current_path, ":p") == vim.fn.fnamemodify(today_path, ":p") then
-        vim.b[current_buf].journal_status = "today"
-      else
-        vim.b[current_buf].journal_status = "archive"
-      end
+      -- The autocmd's own pattern match already guarantees this buffer is
+      -- one jjournal manages, so no separate "is this a journal buffer"
+      -- check is needed here beyond the fact that this callback fired at
+      -- all -- unlike the old journal_status logic, which had to compare
+      -- resolved paths to answer a question the pattern match already
+      -- answers implicitly.
+      vim.b[current_buf].jjournal_entry = true
+      vim.b[current_buf].jjournal_date = path.extract_date_from_filename(filename)
 
       bind_buffer_local_mappings(current_buf)
     end,

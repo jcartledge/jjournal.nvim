@@ -36,17 +36,26 @@ describe("jjournal config", function()
 end)
 
 describe("jjournal.resolve_date", function()
-	-- Chronological-stepping/skipping specs need the current buffer to be
-	-- inside the configured journal path, so the path-scoping check in
-	-- current_anchor_date treats it as the navigation anchor; fn.expand
-	-- supplies the filename each spec navigates from. Neither step nor skip
-	-- depends on "today" at all, so fn.strftime isn't part of the shared
-	-- default -- it's only passed explicitly in the couple of specs that
-	-- actually need it (the outside-journal-path fallback).
-	local function setup_resolve_date_test(overrides, test_fn)
-		setup_test(vim.tbl_deep_extend("force", {
-			api = { nvim_buf_get_name = "/virtual/test/journal/path/current.md" },
-		}, overrides or {}), test_fn)
+	-- Chronological step/skip specs anchor off the current buffer's
+	-- jjournal_date -- the buffer-local var register_autocmds' tagging
+	-- autocmd sets on every buffer it manages (see current_anchor_date in
+	-- dates.lua). anchor_date sets that directly on a scratch buffer
+	-- switched into as the current buffer for the test's duration; pass nil
+	-- to exercise the fallback-to-today path (a buffer jjournal never
+	-- tagged, e.g. one outside the configured journal path).
+	local function setup_resolve_date_test(anchor_date, overrides, test_fn)
+		setup_test(overrides or {}, function()
+			local buf = vim.api.nvim_create_buf(false, true)
+			local original_buf = vim.api.nvim_get_current_buf()
+			vim.api.nvim_set_current_buf(buf)
+			if anchor_date then vim.b[buf].jjournal_date = anchor_date end
+
+			local ok, err = pcall(test_fn)
+
+			vim.api.nvim_set_current_buf(original_buf)
+			vim.api.nvim_buf_delete(buf, { force = true })
+			if not ok then error(err, 0) end
+		end)
 	end
 
 	it("resolves 'today' to today's date", function()
@@ -60,11 +69,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'skip_next' by skipping across empty days to the next existing entry", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-01.md",
-			},
+		setup_resolve_date_test("2026-06-01", {
+			fn = { glob = { "2026-06-01.md", "2026-06-03.md" } },
 		}, function()
 			jjournal.resolve_date("skip_next", function(resolved_date)
 				assert.are.equal("2026-06-03", resolved_date)
@@ -73,11 +79,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("prioritizes virtual unwritten buffers over disk storage when resolving 'skip_next'", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-01.md",
-			},
+		setup_resolve_date_test("2026-06-01", {
+			fn = { glob = { "2026-06-01.md", "2026-06-03.md" } },
 			api = {
 				nvim_list_bufs = { 101, 102 },
 				nvim_buf_is_loaded = true,
@@ -91,11 +94,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'skip_next' to nil when there is no later entry", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-02.md" },
-				expand = "2026-06-02.md",
-			},
+		setup_resolve_date_test("2026-06-02", {
+			fn = { glob = { "2026-06-01.md", "2026-06-02.md" } },
 		}, function()
 			jjournal.resolve_date("skip_next", function(resolved_date)
 				assert.is_nil(resolved_date)
@@ -104,11 +104,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves 'skip_prev' by skipping across empty days to the previous existing entry", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-03.md",
-			},
+		setup_resolve_date_test("2026-06-03", {
+			fn = { glob = { "2026-06-01.md", "2026-06-03.md" } },
 		}, function()
 			jjournal.resolve_date("skip_prev", function(resolved_date)
 				assert.are.equal("2026-06-01", resolved_date)
@@ -121,11 +118,8 @@ describe("jjournal.resolve_date", function()
 	-- existing entry days after today) previously would have been
 	-- unreachable, since anything after today always stepped instead.
 	it("skips forward to an existing entry even when it lands after today", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-07-10.md", "2026-07-15.md" },
-				expand = "2026-07-10.md",
-			},
+		setup_resolve_date_test("2026-07-10", {
+			fn = { glob = { "2026-07-10.md", "2026-07-15.md" } },
 		}, function()
 			jjournal.resolve_date("skip_next", function(resolved_date)
 				assert.are.equal("2026-07-15", resolved_date)
@@ -133,58 +127,29 @@ describe("jjournal.resolve_date", function()
 		end)
 	end)
 
-	-- The default step/skip mappings are buffer_local (see bind_buffer_local_mappings),
-	-- so pressing one of them from outside a journal buffer is no longer
-	-- possible -- these two specs exercise resolve_date's own defensive
-	-- fallback directly instead, which still matters for anyone calling
-	-- execute()/resolve_date() themselves (e.g. custom global mappings with
-	-- use_default_mappings = false).
-	it("falls back to today when the current buffer is date-named but outside the journal path", function()
-		setup_resolve_date_test({
+	-- The default step/skip mappings are buffer_local (see
+	-- bind_buffer_local_mappings), so pressing one of them from outside a
+	-- journal buffer is no longer possible -- this exercises resolve_date's
+	-- own defensive fallback directly instead, which still matters for
+	-- anyone calling execute()/resolve_date() themselves (e.g. a custom
+	-- global mapping with use_default_mappings = false).
+	it("falls back to today when the current buffer has no jjournal_date (e.g. outside the journal path, or never tagged)", function()
+		setup_resolve_date_test(nil, {
 			fn = { strftime = "2026-07-10" },
-			api = { nvim_buf_get_name = "/some/other/notes/2026-06-02.md" },
 		}, function()
 			jjournal.resolve_date("step_next", function(resolved_date)
 				assert.are.equal("2026-07-11", resolved_date)
-			end)
-		end)
-	end)
-
-	it("falls back to today when the buffer's directory merely shares a name prefix with the journal path", function()
-		-- "/virtual/test/journal/path-other" is NOT a descendant of
-		-- "/virtual/test/journal/path", even though it shares a string prefix.
-		setup_resolve_date_test({
-			fn = { strftime = "2026-07-10" },
-			api = { nvim_buf_get_name = "/virtual/test/journal/path-other/2026-06-02.md" },
-		}, function()
-			jjournal.resolve_date("step_next", function(resolved_date)
-				assert.are.equal("2026-07-11", resolved_date)
-			end)
-		end)
-	end)
-
-	it("treats a buffer nested under a subdirectory of the journal path as inside it", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-01.md",
-			},
-			api = { nvim_buf_get_name = "/virtual/test/journal/path/2026/06/2026-06-01.md" },
-		}, function()
-			jjournal.resolve_date("skip_next", function(resolved_date)
-				assert.are.equal("2026-06-03", resolved_date)
 			end)
 		end)
 	end)
 
 	it("discovers nested, non-.md journal files by extracting the date from an arbitrary filename", function()
-		setup_resolve_date_test({
+		setup_resolve_date_test("2026-06-01", {
 			fn = {
 				glob = {
 					"/virtual/test/journal/path/2026/06/journal-2026-06-01.txt",
 					"/virtual/test/journal/path/2026/06/journal-2026-06-03.txt",
 				},
-				expand = "journal-2026-06-01.txt",
 			},
 		}, function()
 			jjournal.resolve_date("skip_next", function(resolved_date)
@@ -194,9 +159,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("steps forward exactly one day, creating the entry even if it doesn't exist yet", function()
-		setup_resolve_date_test({
-			fn = { expand = "2026-07-10.md" },
-		}, function()
+		setup_resolve_date_test("2026-07-10", nil, function()
 			jjournal.resolve_date("step_next", function(resolved_date)
 				assert.are.equal("2026-07-11", resolved_date)
 			end)
@@ -204,9 +167,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("steps backward exactly one day", function()
-		setup_resolve_date_test({
-			fn = { expand = "2026-07-11.md" },
-		}, function()
+		setup_resolve_date_test("2026-07-11", nil, function()
 			jjournal.resolve_date("step_prev", function(resolved_date)
 				assert.are.equal("2026-07-10", resolved_date)
 			end)
@@ -217,9 +178,7 @@ describe("jjournal.resolve_date", function()
 	-- the result lands before or after today -- this previously would have
 	-- fallen back to skip-searching instead.
 	it("steps forward exactly one day even when the result lands before today", function()
-		setup_resolve_date_test({
-			fn = { expand = "2026-06-01.md" },
-		}, function()
+		setup_resolve_date_test("2026-06-01", nil, function()
 			jjournal.resolve_date("step_next", function(resolved_date)
 				assert.are.equal("2026-06-02", resolved_date)
 			end)
@@ -227,9 +186,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("shifts correctly across a year boundary", function()
-		setup_resolve_date_test({
-			fn = { expand = "2025-12-31.md" },
-		}, function()
+		setup_resolve_date_test("2025-12-31", nil, function()
 			jjournal.resolve_date("step_next", function(resolved_date)
 				assert.are.equal("2026-01-01", resolved_date)
 			end)
@@ -237,9 +194,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("steps forward N days when count-prefixed", function()
-		setup_resolve_date_test({
-			fn = { expand = "2026-07-10.md" },
-		}, function()
+		setup_resolve_date_test("2026-07-10", nil, function()
 			jjournal.resolve_date("step_next", function(resolved_date)
 				assert.are.equal("2026-07-13", resolved_date)
 			end, 3)
@@ -247,9 +202,7 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("steps backward N days when count-prefixed", function()
-		setup_resolve_date_test({
-			fn = { expand = "2026-07-13.md" },
-		}, function()
+		setup_resolve_date_test("2026-07-13", nil, function()
 			jjournal.resolve_date("step_prev", function(resolved_date)
 				assert.are.equal("2026-07-10", resolved_date)
 			end, 3)
@@ -257,11 +210,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("skips forward to the Nth existing entry when count-prefixed", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md", "2026-06-05.md" },
-				expand = "2026-06-01.md",
-			},
+		setup_resolve_date_test("2026-06-01", {
+			fn = { glob = { "2026-06-01.md", "2026-06-03.md", "2026-06-05.md" } },
 		}, function()
 			jjournal.resolve_date("skip_next", function(resolved_date)
 				assert.are.equal("2026-06-05", resolved_date)
@@ -270,11 +220,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("skips backward to the Nth existing entry when count-prefixed", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md", "2026-06-05.md" },
-				expand = "2026-06-05.md",
-			},
+		setup_resolve_date_test("2026-06-05", {
+			fn = { glob = { "2026-06-01.md", "2026-06-03.md", "2026-06-05.md" } },
 		}, function()
 			jjournal.resolve_date("skip_prev", function(resolved_date)
 				assert.are.equal("2026-06-01", resolved_date)
@@ -283,11 +230,8 @@ describe("jjournal.resolve_date", function()
 	end)
 
 	it("resolves to nil when a count-prefixed skip requests more entries than exist", function()
-		setup_resolve_date_test({
-			fn = {
-				glob = { "2026-06-01.md", "2026-06-03.md" },
-				expand = "2026-06-01.md",
-			},
+		setup_resolve_date_test("2026-06-01", {
+			fn = { glob = { "2026-06-01.md", "2026-06-03.md" } },
 		}, function()
 			jjournal.resolve_date("skip_next", function(resolved_date)
 				assert.is_nil(resolved_date)
@@ -831,55 +775,49 @@ describe("jjournal.setup", function()
 			end)
 		end)
 
-		-- "Today" is fixed at 2026-07-10 for both specs below; only the buffer's
-		-- name (whether it matches today's date) varies between them.
 		local function setup_status_test(buffer_name, test_fn)
-			setup_test({
-				fn = { strftime = "2026-07-10" },
-				api = { nvim_buf_get_name = buffer_name },
-			}, test_fn)
+			setup_test({ api = { nvim_buf_get_name = buffer_name } }, test_fn)
 		end
 
-		it("flags the buffer as today's journal when its name matches today's date", function()
+		it("tags an opened journal buffer with jjournal_entry = true", function()
 			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
 			setup_status_test("/virtual/test/journal/path/2026-07-10.md", function()
 				local buf = vim.api.nvim_create_buf(false, true)
 
 				callback({ buf = buf })
 
-				assert.are.equal("today", vim.b[buf].journal_status)
+				assert.is_true(vim.b[buf].jjournal_entry)
 
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
 		end)
 
-		it("flags the buffer as an archived journal when its name does not match today's date", function()
+		it("tags an opened journal buffer with jjournal_date extracted from its filename", function()
 			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
 			setup_status_test("/virtual/test/journal/path/2026-06-01.md", function()
 				local buf = vim.api.nvim_create_buf(false, true)
 
 				callback({ buf = buf })
 
-				assert.are.equal("archive", vim.b[buf].journal_status)
+				assert.are.equal("2026-06-01", vim.b[buf].jjournal_date)
 
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
 		end)
 
-		it("resolves today's path via a custom nested file_path when flagging status", function()
+		it("extracts jjournal_date correctly for a custom nested file_path", function()
 			local nested_template = "%Y/%m/%Y-%m-%d.md"
 			local callback =
 				capture_autocmd_callback({ "BufReadPost", "BufNewFile" }, { config = { file_path = nested_template } })
 			setup_test({
 				config = { file_path = nested_template },
-				fn = { strftime = "2026-07-10" },
 				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026/07/2026-07-10.md" },
 			}, function()
 				local buf = vim.api.nvim_create_buf(false, true)
 
 				callback({ buf = buf })
 
-				assert.are.equal("today", vim.b[buf].journal_status)
+				assert.are.equal("2026-07-10", vim.b[buf].jjournal_date)
 
 				vim.api.nvim_buf_delete(buf, { force = true })
 			end)
@@ -913,7 +851,8 @@ describe("jjournal.setup", function()
 					vim.cmd("edit " .. file_path)
 					local buf = vim.api.nvim_get_current_buf()
 
-					assert.is_not_nil(vim.b[buf].journal_status)
+					assert.is_true(vim.b[buf].jjournal_entry)
+					assert.are.equal("2026-06-02", vim.b[buf].jjournal_date)
 
 					vim.cmd("bwipeout! " .. buf)
 				end)
@@ -938,7 +877,8 @@ describe("jjournal.setup", function()
 					vim.cmd("edit " .. file_path)
 					local buf = vim.api.nvim_get_current_buf()
 
-					assert.is_not_nil(vim.b[buf].journal_status)
+					assert.is_true(vim.b[buf].jjournal_entry)
+					assert.are.equal("2026-06-02", vim.b[buf].jjournal_date)
 
 					vim.cmd("bwipeout! " .. buf)
 				end)
@@ -956,7 +896,6 @@ describe("jjournal.setup", function()
 		it("binds every buffer_local mapping when a journal buffer is opened, wired to execute the right target/cmd/count, with its desc", function()
 			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
 			setup_test({
-				fn = { strftime = "2026-07-10" },
 				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
 				config = { use_default_mappings = true },
 				keymap = { set = true },
@@ -991,7 +930,6 @@ describe("jjournal.setup", function()
 		it("does not bind buffer-local mappings when use_default_mappings is false", function()
 			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
 			setup_test({
-				fn = { strftime = "2026-07-10" },
 				api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
 				keymap = { set = true },
 			}, function()
@@ -1012,7 +950,6 @@ describe("jjournal.setup", function()
 			local callback = capture_autocmd_callback({ "BufReadPost", "BufNewFile" })
 			local ok, err = pcall(function()
 				setup_test({
-					fn = { strftime = "2026-07-10" },
 					api = { nvim_buf_get_name = "/virtual/test/journal/path/2026-07-10.md" },
 					config = { use_default_mappings = true },
 					keymap = { set = true },

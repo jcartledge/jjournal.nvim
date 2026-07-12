@@ -7,8 +7,9 @@ CONTENTS                                                  *jjournal-contents*
     2. Setup ..................................... |jjournal-setup|
     3. Configuration ............................. |jjournal-configuration|
     4. Default mappings .......................... |jjournal-mappings|
-    5. Search providers .......................... |jjournal-search|
-    6. Lua API ................................... |jjournal-api|
+    5. Buffer status .............................. |jjournal-buffer-status|
+    6. Search providers .......................... |jjournal-search|
+    7. Lua API ................................... |jjournal-api|
 
 ==============================================================================
 1. Introduction                                      *jjournal-introduction*
@@ -161,7 +162,25 @@ To disable a single mapping while keeping the rest, set it to `false` on
 <
 
 ==============================================================================
-5. Search providers                                          *jjournal-search*
+5. Buffer status                                      *jjournal-buffer-status*
+
+Every buffer jjournal manages is tagged with buffer-local variables, so
+any statusline plugin can read them directly, without depending on
+jjournal's Lua API at all:
+
+    vim.b.jjournal_entry    (boolean) `true` if jjournal manages this
+                            buffer.
+    vim.b.jjournal_date     (string) the entry's `YYYY-MM-DD` date.
+    vim.b.jjournal_pinned   (boolean) `true` if the buffer is protected
+                            from auto-cleanup (see |jjournal-mappings|);
+                            unset otherwise.
+
+No UI ships with jjournal itself -- wire these into whatever statusline
+you already use. See the README for an example using AstroNvim's
+Heirline-based statusline (`astroui.status`).
+
+==============================================================================
+6. Search providers                                          *jjournal-search*
 
 `<leader>fj` (and `require("jjournal").execute("search")`) search the
 journal backlog. The `search` config option (|jjournal-config-search|)
@@ -194,7 +213,7 @@ a Lua function
 <
 
 ==============================================================================
-6. Lua API                                                      *jjournal-api*
+7. Lua API                                                      *jjournal-api*
 
                                                             *jjournal.setup()*
 setup({opts})

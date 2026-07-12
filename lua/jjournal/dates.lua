@@ -7,28 +7,18 @@ local path = require "jjournal.path"
 
 local M = {}
 
----Pinpoints the current YYYY-MM-DD anchor string based on the active window
----context. Only trusts the buffer's own name if it actually lives inside
----(at or below) the configured journal base_dir -- an unrelated date-named
----file elsewhere shouldn't be treated as the navigation anchor. The
----fallback to today only actually triggers for a caller invoking
----resolve_date/execute directly from outside the journal path (e.g. a
----custom global mapping with use_default_mappings = false) -- the default
----step/skip mappings are buffer_local, so they can't reach this function
----from outside the path to begin with.
----@param base_dir string
+---Pinpoints the current YYYY-MM-DD anchor string for a step/skip
+---navigation, from the current buffer's jjournal_date -- the buffer-local
+---var register_autocmds' tagging autocmd sets on every buffer jjournal
+---manages (see init.lua). Falls back to today when unset, which only
+---actually triggers for a caller invoking resolve_date/execute directly
+---from a buffer jjournal never tagged (e.g. a custom global mapping with
+---use_default_mappings = false, invoked from outside the journal path) --
+---the default step/skip mappings are buffer_local, so they can't reach
+---this function from an untagged buffer to begin with.
 ---@return string
-local function current_anchor_date(base_dir)
-  local buf_name = vim.api.nvim_buf_get_name(0)
-  local tail = vim.fn.expand "%:t"
-  if tail == "" then tail = vim.fn.fnamemodify(buf_name, ":t") end
-
-  local buf_dir = vim.fn.fnamemodify(buf_name, ":p:h")
-  local journal_dir = vim.fn.fnamemodify(path.normalize_base_dir(base_dir), ":p"):gsub("/$", "")
-  local inside_journal_path = buf_dir == journal_dir or buf_dir:sub(1, #journal_dir + 1) == journal_dir .. "/"
-
-  local date = inside_journal_path and path.extract_date_from_filename(tail)
-  return date or vim.fn.strftime "%F"
+local function current_anchor_date()
+  return vim.b[0].jjournal_date or vim.fn.strftime "%F"
 end
 
 ---The set of dates with journal files physically written to the storage
@@ -124,15 +114,15 @@ local function shift_date(date_str, days)
 end
 
 ---Shifts `count` calendar days (default 1) in `direction` from wherever the
----current buffer is anchored, regardless of whether the result lands
----before or after today. open_date's own auto-creation opens it whether or
----not a file exists for it yet.
----@param base_dir string
+---current buffer is anchored (see current_anchor_date), regardless of
+---whether the result lands before or after today. open_date's own
+---auto-creation opens it whether or not a file exists for it yet. Unlike
+---M.skip, this never touches disk/buffer state, so it takes no base_dir.
 ---@param direction integer
 ---@param count integer|nil
 ---@return string
-function M.step(base_dir, direction, count)
-  local current = current_anchor_date(base_dir)
+function M.step(direction, count)
+  local current = current_anchor_date()
   local days = count or 1
   return shift_date(current, direction > 0 and days or -days)
 end
@@ -147,7 +137,7 @@ end
 ---@param count integer|nil
 ---@return string|nil
 function M.skip(base_dir, direction, count)
-  local current = current_anchor_date(base_dir)
+  local current = current_anchor_date()
   local dates = all_available_dates(base_dir)
   local index = target_index(dates, current, direction, count)
 

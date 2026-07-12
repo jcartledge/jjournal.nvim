@@ -23,6 +23,41 @@ See `:help jjournal` for the full config reference, all default mappings, and ho
 
 **Upgrading from a flat layout:** `file_path` used to default to the flat `"%Y-%m-%d.md"`; it now defaults to nested `"%Y/%m/%Y-%m-%d.md"`. If you have existing entries in the old flat layout, either set `file_path = "%Y-%m-%d.md"` explicitly to keep them where they are, or move your existing files to match the new layout yourself (e.g. with `zmv` in zsh) before upgrading.
 
+## Buffer status
+
+Every buffer jjournal manages is tagged with buffer-local variables, so any statusline plugin can show at a glance what it's looking at without depending on jjournal's Lua API at all:
+
+- `vim.b.jjournal_entry` (boolean) — `true` if jjournal manages this buffer.
+- `vim.b.jjournal_date` (string) — the entry's `YYYY-MM-DD` date.
+- `vim.b.jjournal_pinned` (boolean) — `true` if the buffer is protected from auto-cleanup (edited, or explicitly pinned via `<leader>jp`); unset otherwise. The default (unpinned, ephemeral) state needs no indication — only the pinned exception is usually worth surfacing.
+
+No UI ships with jjournal itself — wire these into whatever statusline you already use. For example, with [AstroNvim](https://astronvim.com), which uses [Heirline.nvim](https://github.com/rebelot/heirline.nvim) via `astroui.status`:
+
+```lua
+-- lua/plugins/heirline.lua
+return {
+  "rebelot/heirline.nvim",
+  opts = function(_, opts)
+    local status = require("astroui.status")
+
+    table.insert(opts.statusline, status.component.builder({
+      {
+        condition = function() return vim.b[0].jjournal_entry end,
+        provider = function()
+          local text = vim.b[0].jjournal_date or ""
+          if vim.b[0].jjournal_pinned then text = text .. " 📌" end
+          return status.utils.stylize(text, { padding = { left = 1, right = 1 } })
+        end,
+      },
+      update = { "BufEnter", "TextChanged", "TextChangedI" },
+      surround = { separator = "left" },
+    }))
+  end,
+}
+```
+
+For any other statusline plugin (lualine, mini.statusline, native `'statusline'`), the same three variables are all you need — read them via whatever custom-component mechanism that plugin provides.
+
 ## Developing
 
 Requires [LuaRocks](https://luarocks.org/) in addition to Neovim. Clone the repo and install test dependencies into a local `.rocks` tree:
