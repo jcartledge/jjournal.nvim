@@ -186,6 +186,14 @@ jjournal's Lua API at all:
                             from auto-cleanup (see |jjournal-mappings|);
                             unset otherwise.
 
+|jjournal.pin_buffer()| also fires a `User JjournalPinned` autocmd and
+calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`.
+`:redrawstatus` is enough for a statusline that reads these variables
+fresh on every redraw, but a framework that caches its own rendered
+output and only recomputes on specific autocmd events needs
+`User JjournalPinned` added to that event list to notice the change
+immediately rather than on the next unrelated event.
+
 No UI ships with jjournal itself -- wire these into whatever statusline
 you already use. See the README for an example using AstroNvim's
 Heirline-based statusline (`astroui.status`).
@@ -266,7 +274,9 @@ search_backlog()
 pin_buffer()
     Marks the current buffer as pinned, exempting it from the
     auto-cleanup described in |jjournal-mappings| regardless of whether
-    it's ever edited. One-way: there's no unpin.
+    it's ever edited. One-way: there's no unpin. Fires a `User
+    JjournalPinned` autocmd and redraws the statusline -- see
+    |jjournal-buffer-status|.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:

@@ -620,6 +620,28 @@ describe("jjournal.pin_buffer", function()
 			vim.api.nvim_buf_delete(buf, { force = true })
 		end)
 	end)
+
+	-- :redrawstatus alone doesn't reach a statusline framework that caches
+	-- its own rendered output and only recomputes on specific autocmd
+	-- events (e.g. AstroNvim/Heirline's `update` list, see the "Revision"
+	-- section of redraw-statusline-on-pin.md) -- firing this User autocmd
+	-- gives such a component something concrete to listen for. Fired
+	-- before redrawstatus so a listener clearing its cache runs in time
+	-- for the same redraw to pick up the fresh value.
+	it("fires a User JjournalPinned autocmd before redrawing, so caching statusline frameworks can invalidate in time", function()
+		setup_test({ vim = { cmd = true } }, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+
+			jjournal.pin_buffer()
+
+			assert.stub(vim.cmd).was_called_with("doautocmd <nomodeline> User JjournalPinned")
+			assert.are.equal("doautocmd <nomodeline> User JjournalPinned", vim.cmd.calls[1].vals[1])
+			assert.are.equal("redrawstatus", vim.cmd.calls[2].vals[1])
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end)
+	end)
 end)
 
 describe("jjournal.setup", function()

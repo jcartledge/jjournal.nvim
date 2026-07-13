@@ -94,13 +94,17 @@ end
 ---TextChanged/BufWinLeave auto-cleanup (see register_autocmds) regardless
 ---of whether it's ever edited. One-way: there's no unpin -- close the
 ---buffer yourself (:bdelete/:bwipeout) if you no longer want it kept.
+---Fires a `User JjournalPinned` autocmd and redraws the statusline so a
+---pin indicator shows immediately -- see |jjournal-buffer-status|.
 M.pin_buffer = function()
   vim.b[0].jjournal_pinned = true
-  -- Setting a buffer-local variable doesn't itself prompt a repaint --
-  -- statusline plugins typically only redraw on events like CursorMoved
-  -- or ModeChanged, none of which this triggers on its own. Without this,
-  -- a pin indicator wouldn't show until some unrelated action happened to
-  -- redraw the statusline.
+  -- Setting a buffer-local variable doesn't itself prompt a repaint, and
+  -- :redrawstatus alone isn't enough for a statusline framework that
+  -- caches its own rendered output and only recomputes on specific
+  -- autocmd events (e.g. AstroNvim/Heirline's `update` list) -- firing
+  -- this first gives such a component something concrete to invalidate
+  -- its cache on before the redraw below asks for fresh content.
+  vim.cmd("doautocmd <nomodeline> User JjournalPinned")
   vim.cmd("redrawstatus")
 end
 

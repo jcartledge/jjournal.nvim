@@ -33,6 +33,8 @@ Every buffer jjournal manages is tagged with buffer-local variables, so any stat
 - `vim.b.jjournal_date` (string) — the entry's `YYYY-MM-DD` date.
 - `vim.b.jjournal_pinned` (boolean) — `true` if the buffer is protected from auto-cleanup (edited, or explicitly pinned via `<leader>jp`); unset otherwise. The default (unpinned, ephemeral) state needs no indication — only the pinned exception is usually worth surfacing.
 
+`jjournal.pin_buffer()` (bound to `<leader>jp` by default) also fires a `User JjournalPinned` autocmd and calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`. `:redrawstatus` is enough for a statusline that reads these variables fresh on every redraw; but a framework that caches its own rendered output and only recomputes on specific autocmd events (Heirline's `update` list, see below) needs `User JjournalPinned` added to that event list, or it won't notice the change until some unrelated event happens to fire.
+
 No UI ships with jjournal itself — wire these into whatever statusline you already use. For example, with [AstroNvim](https://astronvim.com), which uses [Heirline.nvim](https://github.com/rebelot/heirline.nvim) via `astroui.status`:
 
 ```lua
@@ -51,14 +53,14 @@ return {
           return status.utils.stylize(text, { padding = { left = 1, right = 1 } })
         end,
       },
-      update = { "BufEnter", "TextChanged", "TextChangedI" },
+      update = { "BufEnter", "TextChanged", "TextChangedI", { "User", pattern = "JjournalPinned" } },
       surround = { separator = "left" },
     }))
   end,
 }
 ```
 
-For any other statusline plugin (lualine, mini.statusline, native `'statusline'`), the same three variables are all you need — read them via whatever custom-component mechanism that plugin provides.
+For any other statusline plugin (lualine, mini.statusline, native `'statusline'`), the same three variables are all you need to read — but if that plugin also caches its rendered output rather than recomputing on every redraw (lualine does), hook its own refresh function to the `User JjournalPinned` autocmd (e.g. `vim.api.nvim_create_autocmd("User", { pattern = "JjournalPinned", callback = function() require("lualine").refresh() end })`) the same way you would for any other state change it doesn't already know about.
 
 ## Developing
 
