@@ -191,15 +191,16 @@ jjournal's Lua API at all:
 
 |jjournal.pin_buffer()| also fires a `User JjournalPinned` autocmd and
 calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`.
-`:redrawstatus` is enough for a statusline that reads these variables
-fresh on every redraw, but a framework that caches its own rendered
-output and only recomputes on specific autocmd events needs
-`User JjournalPinned` added to that event list to notice the change
-immediately rather than on the next unrelated event.
+`:redrawstatus` is enough on its own for the common case of a statusline
+that reads these variables fresh on every redraw. `User JjournalPinned`
+is for the less common case: a framework that caches its own rendered
+output and only refreshes on specific events it already knows about
+needs an explicit hook into this one too, since pinning isn't among
+them.
 
 No UI ships with jjournal itself -- wire these into whatever statusline
-you already use. See the README for an example using AstroNvim's
-Heirline-based statusline (`astroui.status`).
+you already use. See the README for statusline and tabline examples
+using AstroNvim's Heirline-based statusline (`astroui.status`).
 
 ==============================================================================
 6. Search providers                                          *jjournal-search*

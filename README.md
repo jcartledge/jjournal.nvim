@@ -33,7 +33,7 @@ Every buffer jjournal manages is tagged with buffer-local variables, so any stat
 - `vim.b.jjournal_date` (string) — the entry's `YYYY-MM-DD` date.
 - `vim.b.jjournal_pinned` (boolean) — `true` if the buffer is protected from auto-cleanup (edited, or explicitly pinned via `<leader>jp`); unset otherwise. The default (unpinned, ephemeral) state needs no indication — only the pinned exception is usually worth surfacing.
 
-`jjournal.pin_buffer()` (bound to `<leader>jp` by default) also fires a `User JjournalPinned` autocmd and calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`. `:redrawstatus` is enough for a statusline that reads these variables fresh on every redraw; but a framework that caches its own rendered output and only recomputes on specific autocmd events (Heirline, see below) needs `User JjournalPinned` added to that event list, or it won't notice the change until some unrelated event happens to fire.
+`jjournal.pin_buffer()` (bound to `<leader>jp` by default) also fires a `User JjournalPinned` autocmd and calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`. `:redrawstatus` is enough on its own for any statusline that reads these variables fresh on every redraw (which is the common case — see the Heirline recipe below, which needs nothing extra). `User JjournalPinned` exists for the less common case: a framework that caches its own rendered output and only refreshes on specific events it already knows about (lualine does this) needs an explicit hook into that event to notice the change, since pinning isn't one of the events it was built to expect.
 
 No UI ships with jjournal itself — wire these into whatever statusline you already use. For example, with [AstroNvim](https://astronvim.com), which uses [Heirline.nvim](https://github.com/rebelot/heirline.nvim) via `astroui.status`:
 
@@ -53,17 +53,47 @@ return {
           return status.utils.stylize(text, { padding = { left = 1, right = 1 } })
         end,
       },
-      -- Heirline's own native `update` field only accepts a flat list of
-      -- event-name strings (plus one `pattern` shared across all of
-      -- them), so it can't express "the stock events, AND a User event
-      -- with its own pattern" -- that combination has to go through
-      -- astroui's `init.update_events` helper via `init` instead.
-      init = require("astroui.status").init.update_events({ "BufEnter", "TextChanged", "TextChangedI", { "User", pattern = "JjournalPinned" } }),
       surround = { separator = "left" },
     }))
   end,
 }
 ```
+
+This component has no `update` field, so Heirline never caches its rendered text — it recomputes `condition`/`provider` fresh on every redraw, meaning `pin_buffer()`'s `:redrawstatus` call is all it needs. (Heirline only caches a component's output across redraws when its own `update` field is set; adding one to squeeze out a little performance would also need `User JjournalPinned` in that event list, or the cache would go stale exactly like this bug did originally — but for a component this cheap, it isn't worth the complexity.)
+
+### Tabline / bufferline
+
+To show which buffers are pinned across every open buffer at once (useful once you have several journal entries open in different splits, where a shared statusline can only describe the current one), add the same marker to your tabline. AstroNvim's default tabline (`astronvim/plugins/heirline.lua`) already renders one entry per open buffer via:
+
+```lua
+status.heirline.make_buflist(status.component.tabline_file_info())
+```
+
+Don't insert a *second* `make_buflist(...)` into `opts.tabline` alongside it — that renders a whole duplicate row of buffer tabs. Instead, extend the `tabline_file_info()` call with an extra child, the same way `component.builder` accepts one for the statusline recipe above:
+
+```lua
+-- lua/plugins/heirline.lua
+return {
+  "rebelot/heirline.nvim",
+  opts = function(_, opts)
+    local status = require("astroui.status")
+
+    -- Index 2 is AstroNvim's own buffer-tabs entry as of this writing
+    -- (astronvim/plugins/heirline.lua's `tabline` list); adjust the
+    -- index if your own opts.tabline layout differs.
+    opts.tabline[2] = status.heirline.make_buflist(status.component.tabline_file_info({
+      [9] = {
+        -- self.bufnr, not vim.b[0]: each buffer in the tabline renders
+        -- once per open buffer, most of which aren't the current one.
+        condition = function(self) return vim.b[self.bufnr].jjournal_pinned end,
+        provider = " 📌",
+      },
+    }))
+  end,
+}
+```
+
+`status.component.tabline_file_info(opts)` threads `opts` through AstroUI's `setup_providers`, which only touches the numeric indices belonging to its own named providers (file icon, filename, close button, etc.) and otherwise passes `opts` straight through to the underlying `component.builder` — so an extra `opts[9]` survives as an additional child appended after the built-in ones, without disturbing the filename/icon/close-button already there.
 
 For any other statusline plugin (lualine, mini.statusline, native `'statusline'`), the same three variables are all you need to read — but if that plugin also caches its rendered output rather than recomputing on every redraw (lualine does), hook its own refresh function to the `User JjournalPinned` autocmd (e.g. `vim.api.nvim_create_autocmd("User", { pattern = "JjournalPinned", callback = function() require("lualine").refresh() end })`) the same way you would for any other state change it doesn't already know about.
 

@@ -53,3 +53,21 @@ This only affects the README/doc.txt recipe text (jjournal's own `pin_buffer()` 
 ### **Busted Test Cases**
 
 N/A -- documentation-only correction; the underlying `pin_buffer()` behavior already has coverage from the revision above.
+
+## **Revision: the recipe's `init`/`update_events` wiring wasn't actually the fix either -- it was dead weight**
+
+**Use Case:** While building the tabline recipe (`tabline-pin-indicator-recipe.md`), a closer read of Heirline's `_eval` (`heirline/statusline.lua`) showed that `_win_cache` (the thing `update_events`'s registered autocmds clear) is only ever *read or written* when the component's native `update` field is truthy -- `_eval` gates the whole caching branch, and `_freeze_cache` only writes `_win_cache` for components in `self._updatable_components`, which a component is only added to `if update then ...`. The previous revision's recipe replaced `update` with `init = ...update_events(...)`, meaning `update` was never set on this component at all -- so it was never added to `_updatable_components`, its `_win_cache` was never written, and the caching branch of `_eval` was skipped unconditionally on every pass. In other words, the fix worked because dropping `update` disabled Heirline's per-window caching for this component entirely (it now always recomputes fresh, regardless of which event caused the redraw), not because `init`/`update_events` was correctly invalidating a cache in time -- confirmed by flipping `vim.b.jjournal_pinned` directly (bypassing `pin_buffer()` and its `User JjournalPinned` autocmd entirely) and seeing the change reflected immediately after a plain `:redrawstatus`, which would be impossible if a cache genuinely needed invalidating first.
+
+A follow-up attempt to properly compose *both* -- keep `update` for the stock events (real caching, preserving whatever performance intent the original config had) and add `init`/`update_events` just for the custom `User JjournalPinned` pattern -- was tried and found to **not** reliably invalidate through Heirline's real per-window component instancing (the isolated `update_events` unit itself works fine; composed with a live `update` field on a component embedded in a real evaluated tree, it didn't in testing). Not pursued further given the simpler, already-verified-correct alternative below covers the documented use case without it.
+
+**Fix:** drop `init`/`update_events` from the recipe entirely. The component doesn't need it: omitting `update` already guarantees a fresh read on every Heirline redraw, `:redrawstatus` (already fired by `pin_buffer()`) is sufficient to trigger that redraw, and the recipe is simpler for it. `jjournal.pin_buffer()` firing `User JjournalPinned` stays -- it remains useful for statusline setups that genuinely do cache and refresh only on specific events (lualine's `require("lualine").refresh()`, or a Heirline component that legitimately keeps `update` for its own native events), just not for the example recipe as shown.
+
+### **Acceptance Criteria**
+
+* **Given** a reader following the README's AstroNvim/Heirline recipe,
+* **When** they wire it up as documented,
+* **Then** it uses neither `update` nor `init` on the pin-aware component, and still shows the pin indicator immediately after `<leader>jp` -- verified against the real `heirline.setup()`/`eval_statusline()` pipeline by flipping `vim.b.jjournal_pinned` directly (no event at all) and confirming the next `:redrawstatus` already reflects it.
+
+### **Busted Test Cases**
+
+N/A -- documentation-only correction; `pin_buffer()`'s own behavior (setting the var, firing `User JjournalPinned`, calling `:redrawstatus`) is unchanged and already covered.
