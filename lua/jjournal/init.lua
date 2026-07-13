@@ -96,6 +96,12 @@ end
 ---buffer yourself (:bdelete/:bwipeout) if you no longer want it kept.
 M.pin_buffer = function()
   vim.b[0].jjournal_pinned = true
+  -- Setting a buffer-local variable doesn't itself prompt a repaint --
+  -- statusline plugins typically only redraw on events like CursorMoved
+  -- or ModeChanged, none of which this triggers on its own. Without this,
+  -- a pin indicator wouldn't show until some unrelated action happened to
+  -- redraw the statusline.
+  vim.cmd("redrawstatus")
 end
 
 ---Runs one of the mapping actions directly: `target` is one of "today",

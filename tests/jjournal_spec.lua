@@ -607,6 +607,19 @@ describe("jjournal.pin_buffer", function()
 			vim.api.nvim_buf_delete(buf, { force = true })
 		end)
 	end)
+
+	it("redraws the statusline so a pin indicator shows immediately, not on the next unrelated redraw", function()
+		setup_test({ vim = { cmd = true } }, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+
+			jjournal.pin_buffer()
+
+			assert.stub(vim.cmd).was_called_with("redrawstatus")
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end)
+	end)
 end)
 
 describe("jjournal.setup", function()
