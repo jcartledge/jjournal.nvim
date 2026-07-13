@@ -70,4 +70,59 @@ function M.normalize_base_dir(base_dir)
   return base_dir:sub(-1) == "/" and base_dir or base_dir .. "/"
 end
 
+---Walks upward from `dir` to the nearest ancestor that exists on disk,
+---stopping at the first hit (or the filesystem root, if none exists).
+---`mkdir(..., "p")` will succeed later as long as SOME existing ancestor is
+---writable now, even if `dir` itself (and everything below the ancestor)
+---doesn't exist yet -- which is the normal, expected state for a base_dir
+---nobody has journaled into yet.
+---@param dir string
+---@return string
+local function nearest_existing_ancestor(dir)
+  local current = (vim.fn.fnamemodify(dir, ":p"):gsub("/$", ""))
+  while current ~= "" and vim.fn.isdirectory(current) == 0 do
+    local parent = vim.fn.fnamemodify(current, ":h")
+    if parent == current then break end
+    current = parent
+  end
+  return current
+end
+
+---Validates that base_dir is usable, called once from setup(). Two
+---different responses, chosen by how reliable each check actually is:
+---errors immediately if base_dir already exists as a regular file rather
+---than a directory -- unambiguous, no filesystem quirk or timing issue
+---makes that workable, so it gets the same treatment as an invalid
+---file_path. Otherwise warns (without blocking setup -- mappings/autocmds
+---still bind) if base_dir's nearest existing ancestor isn't writable --
+---permission-bit inspection isn't reliable enough across every
+---filesystem/platform (network mounts, containers, ACLs) to risk
+---disabling the whole plugin over a possible false positive.
+---@param base_dir string
+function M.validate_base_dir(base_dir)
+  local normalized = (M.normalize_base_dir(base_dir):gsub("/$", ""))
+
+  if vim.fn.isdirectory(normalized) == 0 and vim.fn.filereadable(normalized) == 1 then
+    error("jjournal: config.base_dir '" .. base_dir .. "' already exists as a file, not a directory", 0)
+  end
+
+  -- Excludes the filesystem root itself: reaching all the way up to "/"
+  -- without finding anything else means nothing in the entire configured
+  -- path exists yet, which in practice only happens for a thoroughly
+  -- synthetic or bogus path -- "/" being unwritable (true for a normal
+  -- user on virtually any real system) carries no real signal at that
+  -- point, so it isn't worth warning over.
+  local ancestor = nearest_existing_ancestor(normalized)
+  if ancestor ~= "" and ancestor ~= "/" and vim.fn.filewritable(ancestor) ~= 2 then
+    vim.notify(
+      "jjournal: base_dir '"
+        .. base_dir
+        .. "' does not appear to be writable (nearest existing directory '"
+        .. ancestor
+        .. "' is not writable) -- entries may fail to save until this is fixed",
+      vim.log.levels.ERROR
+    )
+  end
+end
+
 return M

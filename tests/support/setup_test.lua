@@ -42,8 +42,9 @@ local stub = require("luassert.stub")
 -- test had to remember to call -- and skipped entirely if the test threw
 -- before reaching it, leaking stubs/config into every test that ran after.
 -- Taking the test body as `test_fn` instead makes cleanup unconditional: it
--- always runs, even when `test_fn` errors, and the error is then re-raised
--- so busted still reports the failure.
+-- always runs, even when `test_fn` -- or setup() itself, e.g. a deliberately
+-- invalid base_dir/file_path -- errors, and the error is then re-raised so
+-- busted still reports the failure.
 local function setup_test(mocks, test_fn)
 	mocks = mocks or {}
 	local active_stubs = {}
@@ -66,13 +67,14 @@ local function setup_test(mocks, test_fn)
 		table.insert(active_stubs, stub(entry[1], entry[2], entry[3]))
 	end
 
-	jjournal.setup(vim.tbl_extend("force", {
-		base_dir = "/virtual/test/journal/path/",
-		file_path = "%Y-%m-%d.md",
-		use_default_mappings = false,
-	}, mocks.config or {}))
-
-	local ok, err = pcall(test_fn)
+	local ok, err = pcall(function()
+		jjournal.setup(vim.tbl_extend("force", {
+			base_dir = "/virtual/test/journal/path/",
+			file_path = "%Y-%m-%d.md",
+			use_default_mappings = false,
+		}, mocks.config or {}))
+		test_fn()
+	end)
 
 	jjournal.config = previous_config
 	for _, s in ipairs(active_stubs) do

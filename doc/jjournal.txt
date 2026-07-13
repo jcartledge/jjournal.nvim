@@ -55,6 +55,15 @@ base_dir~
     optional. Where each entry lives beneath this root is controlled by
     |jjournal-config-file_path|.
 
+    Validated at `setup()`: raises an error immediately if `base_dir`
+    already exists as a regular file rather than a directory. If it
+    doesn't exist yet (the normal case for a new journal) but its nearest
+    existing parent directory isn't writable, `setup()` still completes
+    (mappings and autocmds bind as usual) but warns with `vim.notify` at
+    `ERROR` level, since permission checks aren't reliable enough across
+    every filesystem to justify disabling the plugin over a possible false
+    positive.
+
                                                    *jjournal-config-file_path*
 file_path~
     Type: `string`

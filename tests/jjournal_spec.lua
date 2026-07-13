@@ -25,7 +25,6 @@ describe("jjournal config", function()
 	it("normalizes a configured path that has no trailing slash", function()
 		setup_test({
 			config = { base_dir = "/virtual/test/no-trailing-slash" },
-			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.open_date("2026-07-09", "edit")
@@ -515,7 +514,7 @@ describe("jjournal.execute", function()
 
 	it("resolves and opens a date for non-search targets", function()
 		setup_test({
-			fn = { strftime = "2026-07-10", isdirectory = 1 },
+			fn = { strftime = "2026-07-10" },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("today", "vsplit")
@@ -527,7 +526,6 @@ describe("jjournal.execute", function()
 	it("prompts for a date and opens it in a vsplit for the 'prompt' target", function()
 		setup_test({
 			ui = { input = function(_, callback) callback("2026-07-09") end },
-			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("prompt", "vsplit")
@@ -551,7 +549,7 @@ describe("jjournal.execute", function()
 
 	it("ignores a count prefix for the 'today' target", function()
 		setup_test({
-			fn = { strftime = "2026-07-10", isdirectory = 1 },
+			fn = { strftime = "2026-07-10" },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("today", "edit", 5)
@@ -563,7 +561,6 @@ describe("jjournal.execute", function()
 	it("ignores a count prefix for the 'prompt' target", function()
 		setup_test({
 			ui = { input = function(_, callback) callback("2026-07-09") end },
-			fn = { isdirectory = 1 },
 			vim = { cmd = true },
 		}, function()
 			jjournal.execute("prompt", "edit", 5)
@@ -726,6 +723,109 @@ describe("jjournal.setup", function()
 
 		it("accepts a filename containing %D as shorthand for the full date", function()
 			setup_test({ config = { file_path = "%Y/%m/%d/journal-%D.txt" } }, function() end)
+		end)
+	end)
+
+	describe("base_dir validation", function()
+		-- Fakes Vim's own fnamemodify(":h"/":p") for exercising the upward
+		-- directory walk (nearest_existing_ancestor in path.lua) without
+		-- touching the real filesystem. Shared across every spec below since
+		-- it's a fixed, reusable path-splitting stand-in -- what varies per
+		-- spec is which specific paths isdirectory/filewritable report as
+		-- existing/writable, not this.
+		local function fake_fnamemodify(path_str, mods)
+			if mods == ":p" then return path_str end
+			if mods == ":h" then
+				-- A top-level directory's (e.g. "/virtual") parent is "/" itself,
+				-- not "" -- real fnamemodify(":h") agrees, so this has to match
+				-- for the "reaches the filesystem root" spec below to be
+				-- reachable at all via the walk, the same way it would for real.
+				local parent = path_str:match("^(.*)/[^/]+$")
+				return (not parent or parent == "") and "/" or parent
+			end
+			return path_str
+		end
+
+		-- The default base_dir ("/virtual/test/journal/path/") doesn't exist
+		-- on the real filesystem the test suite runs on, so real
+		-- isdirectory/filewritable calls against it already return 0/false
+		-- without needing to be mocked -- only filereadable needs faking here,
+		-- to simulate "this path exists, but as a file".
+		it("errors and does not proceed when base_dir already exists as a file, not a directory", function()
+			assert.has_error(function()
+				setup_test({ fn = { filereadable = 1 } }, function() end)
+			end)
+		end)
+
+		it("does not warn when base_dir already exists and is a writable directory", function()
+			setup_test({
+				fn = { isdirectory = 1, filewritable = 2 },
+				vim = { notify = true },
+			}, function()
+				assert.stub(vim.notify).was_not_called()
+			end)
+		end)
+
+		it("does not warn when base_dir doesn't exist yet but its writable parent does", function()
+			setup_test({
+				fn = {
+					isdirectory = function(dir) return dir == "/virtual/test/journal" and 1 or 0 end,
+					fnamemodify = fake_fnamemodify,
+					filewritable = function(dir) return dir == "/virtual/test/journal" and 2 or 0 end,
+				},
+				vim = { notify = true },
+			}, function()
+				assert.stub(vim.notify).was_not_called()
+			end)
+		end)
+
+		it("walks up multiple missing levels to find the nearest existing ancestor", function()
+			setup_test({
+				fn = {
+					isdirectory = function(dir) return dir == "/virtual/test" and 1 or 0 end,
+					fnamemodify = fake_fnamemodify,
+					filewritable = function(dir) return dir == "/virtual/test" and 2 or 0 end,
+				},
+				vim = { notify = true },
+			}, function()
+				assert.stub(vim.notify).was_not_called()
+			end)
+		end)
+
+		-- Doesn't rely on the real filesystem happening to lack a "/virtual"
+		-- directory (which is what makes every OTHER spec in this suite's
+		-- default fixture harmless, since their walk also reaches here) --
+		-- mocked explicitly so this behavior is pinned down deliberately
+		-- rather than working by accident of the fixture path chosen.
+		it("does not warn when the walk reaches the filesystem root with no other existing ancestor found", function()
+			setup_test({
+				fn = {
+					isdirectory = function(dir) return dir == "/" and 1 or 0 end,
+					fnamemodify = fake_fnamemodify,
+					filewritable = 0,
+				},
+				vim = { notify = true },
+			}, function()
+				assert.stub(vim.notify).was_not_called()
+			end)
+		end)
+
+		it("warns but still binds mappings/autocmds when the nearest existing ancestor isn't writable", function()
+			setup_test({
+				fn = {
+					isdirectory = function(dir) return dir == "/virtual/test/journal" and 1 or 0 end,
+					fnamemodify = fake_fnamemodify,
+					filewritable = 0,
+				},
+				config = { use_default_mappings = true },
+				keymap = { set = true },
+				vim = { notify = true },
+			}, function()
+				assert.stub(vim.notify).was_called(1)
+				assert.are.equal(vim.log.levels.ERROR, vim.notify.calls[1].vals[2])
+				assert.matches("base_dir", vim.notify.calls[1].vals[1])
+				assert.stub(vim.keymap.set).was_called()
+			end)
 		end)
 	end)
 
@@ -1084,7 +1184,13 @@ describe("jjournal.setup", function()
 		it("does not create the directory when it already exists", function()
 			local callback = capture_autocmd_callback("BufWritePre")
 			setup_test({
-				fn = { isdirectory = 1, mkdir = true },
+				-- filewritable = 2 keeps this test's own setup() call from
+				-- also tripping the base_dir-writability warning (see "base_dir
+				-- validation" above) as an unrelated side effect -- isdirectory
+				-- = 1 here means the base_dir check treats it as already
+				-- existing, so without this it would fall through to a real,
+				-- unmocked filewritable() call against a nonexistent path.
+				fn = { isdirectory = 1, filewritable = 2, mkdir = true },
 			}, function()
 				callback({ buf = 0, file = "/virtual/test/journal/path/2026-07-09.md" })
 

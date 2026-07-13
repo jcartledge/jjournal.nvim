@@ -279,6 +279,7 @@ M.mappings = {
 M.setup = function(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
   path.validate_file_path(M.config.file_path)
+  path.validate_base_dir(M.config.base_dir)
 
   bind_mappings()
   register_autocmds()
