@@ -90,14 +90,15 @@ M.search_backlog = function()
   )
 end
 
----Marks the current buffer as pinned, exempting it from the
----TextChanged/BufWinLeave auto-cleanup (see register_autocmds) regardless
----of whether it's ever edited. One-way: there's no unpin -- close the
----buffer yourself (:bdelete/:bwipeout) if you no longer want it kept.
----Fires a `User JjournalPinned` autocmd and redraws the statusline so a
----pin indicator shows immediately -- see |jjournal-buffer-status|.
+---Toggles the current buffer's pinned state, exempting it from the
+---TextChanged/BufWinLeave auto-cleanup (see register_autocmds) while
+---pinned, regardless of whether it's ever edited -- including a buffer
+---pinned by editing rather than by this function; both represent the
+---same protected state, so both unpin the same way. Fires a `User
+---JjournalPinned` autocmd and redraws the statusline so a pin indicator
+---updates immediately either direction -- see |jjournal-buffer-status|.
 M.pin_buffer = function()
-  vim.b[0].jjournal_pinned = true
+  vim.b[0].jjournal_pinned = not vim.b[0].jjournal_pinned
   -- Setting a buffer-local variable doesn't itself prompt a repaint, and
   -- :redrawstatus alone isn't enough for a statusline framework that
   -- caches its own rendered output and only recomputes on specific
@@ -280,7 +281,7 @@ M.mappings = {
   ["<leader>fj"] = { target = "search", desc = "Search journal backlog (grep)" },
 
   ["<leader>jj"] = { target = "prompt", desc = "Jump to journal date" },
-  ["<leader>jp"] = { target = "pin", desc = "Pin the current journal buffer", buffer_local = true },
+  ["<leader>jp"] = { target = "pin", desc = "Toggle pinning the current journal buffer", buffer_local = true },
 }
 
 ---Merges `opts` into the current config and (re-)binds mappings and

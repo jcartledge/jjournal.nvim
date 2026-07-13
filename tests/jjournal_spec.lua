@@ -608,6 +608,42 @@ describe("jjournal.pin_buffer", function()
 		end)
 	end)
 
+	it("unpins an already-pinned buffer when called again, i.e. acts as a toggle", function()
+		setup_test(nil, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+
+			jjournal.pin_buffer()
+			jjournal.pin_buffer()
+
+			assert.is_false(vim.b[buf].jjournal_pinned)
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end)
+	end)
+
+	-- vim.b.jjournal_pinned is a single flag regardless of whether it was
+	-- set by pin_buffer() or by the TextChanged/TextChangedI edit-tracking
+	-- autocmd (see register_autocmds) -- both represent the same
+	-- "protected from auto-cleanup" state, so toggling undoes either the
+	-- same way. See make-pin-buffer-a-toggle.md for why this has no
+	-- meaningful safety gap: BufWinLeave's cleanup already refuses (via
+	-- Vim's own :bwipeout, no bang) to wipe a buffer with real unsaved
+	-- changes, independently of this flag.
+	it("unpins a buffer that was pinned by editing, not by pin_buffer", function()
+		setup_test(nil, function()
+			local buf = vim.api.nvim_create_buf(false, false)
+			vim.api.nvim_set_current_buf(buf)
+			vim.b[buf].jjournal_pinned = true
+
+			jjournal.pin_buffer()
+
+			assert.is_false(vim.b[buf].jjournal_pinned)
+
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end)
+	end)
+
 	it("redraws the statusline so a pin indicator shows immediately, not on the next unrelated redraw", function()
 		setup_test({ vim = { cmd = true } }, function()
 			local buf = vim.api.nvim_create_buf(false, false)

@@ -122,7 +122,7 @@ Bound in normal mode when `use_default_mappings = true` (the default):
     [j              Skip to the previous existing entry.
     ]j              Skip to the next existing entry.
     <leader>jj      Prompt for a date and open it.
-    <leader>jp      Pin the current journal buffer. See below.
+    <leader>jp      Toggle pinning the current journal buffer. See below.
     <leader>fj      Search the journal backlog. See |jjournal-search|.
 
 `[jj`/`]jj`/`[j`/`]j`/`<leader>jp` are only mapped inside buffers
@@ -159,9 +159,12 @@ one-way signal, not a live check of whether the buffer currently has
 unsaved changes.
 
 To keep an unedited buffer open on purpose -- e.g. an old entry you
-want to keep referring back to -- `<leader>jp` pins it. There's no
-unpin: close the buffer yourself (|:bdelete| or |:bwipeout|) if you
-change your mind. A buffer still visible in another window is never
+want to keep referring back to -- `<leader>jp` pins it. Pressing it
+again unpins it, whether it was pinned this way or by editing -- both
+represent the same protected state, so both undo the same way; a buffer
+you actually still have unsaved changes in can't be wiped regardless,
+since the underlying |:bwipeout| Vim itself uses refuses to close a
+modified buffer. A buffer still visible in another window is never
 closed regardless of pin state, so splitting to view two entries side
 by side needs no special handling.
 
@@ -272,11 +275,12 @@ search_backlog()
 
                                                        *jjournal.pin_buffer()*
 pin_buffer()
-    Marks the current buffer as pinned, exempting it from the
-    auto-cleanup described in |jjournal-mappings| regardless of whether
-    it's ever edited. One-way: there's no unpin. Fires a `User
-    JjournalPinned` autocmd and redraws the statusline -- see
-    |jjournal-buffer-status|.
+    Toggles the current buffer's pinned state, exempting it from the
+    auto-cleanup described in |jjournal-mappings| while pinned,
+    regardless of whether it's ever edited -- including a buffer pinned
+    by editing rather than by this function. Fires a `User
+    JjournalPinned` autocmd and redraws the statusline either direction
+    -- see |jjournal-buffer-status|.
 
 ==============================================================================
 vim:tw=78:ts=8:noet:ft=help:norl:
