@@ -22,16 +22,6 @@ describe("jjournal config", function()
 		assert.are.equal("%Y/%m/%Y-%m-%d.md", fresh.config.file_path)
 	end)
 
-	it("normalizes a configured path that has no trailing slash", function()
-		setup_test({
-			config = { base_dir = "/virtual/test/no-trailing-slash" },
-			vim = { cmd = true },
-		}, function()
-			jjournal.open_date("2026-07-09", "edit")
-
-			assert.stub(vim.cmd).was_called_with("edit /virtual/test/no-trailing-slash/2026-07-09.md")
-		end)
-	end)
 end)
 
 describe("jjournal.resolve_date", function()
@@ -271,6 +261,12 @@ describe("jjournal.resolve_path", function()
 				"/virtual/test/journal/path/2026/07/09/journal-2026-07-09.txt",
 				jjournal.resolve_path("2026-07-09")
 			)
+		end)
+	end)
+
+	it("normalizes a configured base_dir that has no trailing slash", function()
+		setup_test({ config = { base_dir = "/virtual/test/no-trailing-slash" } }, function()
+			assert.are.equal("/virtual/test/no-trailing-slash/2026-07-09.md", jjournal.resolve_path("2026-07-09"))
 		end)
 	end)
 end)
@@ -657,14 +653,17 @@ describe("jjournal.pin_buffer", function()
 		end)
 	end)
 
-	-- :redrawstatus alone doesn't reach a statusline framework that caches
-	-- its own rendered output and only recomputes on specific autocmd
-	-- events (e.g. AstroNvim/Heirline's `update` list, see the "Revision"
-	-- section of redraw-statusline-on-pin.md) -- firing this User autocmd
-	-- gives such a component something concrete to listen for. Fired
-	-- before redrawstatus so a listener clearing its cache runs in time
-	-- for the same redraw to pick up the fresh value.
-	it("fires a User JjournalPinned autocmd before redrawing, so caching statusline frameworks can invalidate in time", function()
+	-- :redrawstatus alone only reaches a statusline that recomputes fresh
+	-- on every redraw (the shipped Heirline recipe is exactly this, see
+	-- README -- it needs nothing beyond :redrawstatus). This event is a
+	-- general extension point for the other kind: a framework that caches
+	-- its own rendered output and only refreshes on specific events it
+	-- already knows about, e.g. lualine's require("lualine").refresh()
+	-- hooked to this autocmd (see redraw-statusline-on-pin.md's third
+	-- revision for why Heirline's own `update` field turned out not to be
+	-- a reliable way to use this event). Fired before redrawstatus so
+	-- such a listener has already run by the time that redraw happens.
+	it("fires a User JjournalPinned autocmd before redrawing, so a caching statusline framework has a hook to refresh on", function()
 		setup_test({ vim = { cmd = true } }, function()
 			local buf = vim.api.nvim_create_buf(false, false)
 			vim.api.nvim_set_current_buf(buf)
