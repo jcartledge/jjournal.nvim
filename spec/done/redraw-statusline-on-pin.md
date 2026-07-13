@@ -35,3 +35,21 @@ it("fires a User JjournalPinned autocmd when pinning the current buffer", functi
     -- arrange / act / assert using the busted framework
 end)
 ```
+
+## **Revision: the recipe itself crashed Heirline -- wrong AstroUI API surface**
+
+**Use Case:** The recipe added by the revision above told readers to add `{ "User", pattern = "JjournalPinned" }` as an entry inside `status.component.builder`'s `update` list. That's wrong: `component.builder` (`astroui/status/component.lua`) forwards `update` straight through as a plain field on the returned component table, which Heirline's own native `update` handling (`heirline/statusline.lua`'s `register_update_autocmd`) then consumes directly -- and that native handling only accepts a flat list of event-name strings (plus a single `pattern` shared across all of them), not a per-event table. Passing one crashes with `E5108: ... Invalid 'event': Cannot convert given Lua table` the moment the statusline tries to redraw -- reproduced verbatim against the real `heirline.setup()` + `eval_statusline()` pipeline.
+
+The construct that actually supports mixing plain events with a `User`+pattern event is `astroui.status.init.update_events` (its own docstring: "not supported yet by Heirline's update field"), wired through the component's `init` field instead of `update`. Verified against the same real pipeline: `init = require("astroui.status").init.update_events({ "BufEnter", "TextChanged", "TextChangedI", { "User", pattern = "JjournalPinned" } })` doesn't crash, and a real `jjournal.pin_buffer()` call correctly changes the rendered statusline text within the same eval pass.
+
+This only affects the README/doc.txt recipe text (jjournal's own `pin_buffer()` firing `User JjournalPinned` was already correct and unaffected) -- no Lua behavior changes, so no new busted spec.
+
+### **Acceptance Criteria**
+
+* **Given** a reader following the README's AstroNvim/Heirline recipe,
+* **When** they wire it up as documented,
+* **Then** it uses `init = require("astroui.status").init.update_events({...})` (not `update = {...}`) to combine the stock events with `{ "User", pattern = "JjournalPinned" }`, and does not crash Heirline on redraw.
+
+### **Busted Test Cases**
+
+N/A -- documentation-only correction; the underlying `pin_buffer()` behavior already has coverage from the revision above.

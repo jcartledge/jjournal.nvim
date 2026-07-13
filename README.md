@@ -33,7 +33,7 @@ Every buffer jjournal manages is tagged with buffer-local variables, so any stat
 - `vim.b.jjournal_date` (string) — the entry's `YYYY-MM-DD` date.
 - `vim.b.jjournal_pinned` (boolean) — `true` if the buffer is protected from auto-cleanup (edited, or explicitly pinned via `<leader>jp`); unset otherwise. The default (unpinned, ephemeral) state needs no indication — only the pinned exception is usually worth surfacing.
 
-`jjournal.pin_buffer()` (bound to `<leader>jp` by default) also fires a `User JjournalPinned` autocmd and calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`. `:redrawstatus` is enough for a statusline that reads these variables fresh on every redraw; but a framework that caches its own rendered output and only recomputes on specific autocmd events (Heirline's `update` list, see below) needs `User JjournalPinned` added to that event list, or it won't notice the change until some unrelated event happens to fire.
+`jjournal.pin_buffer()` (bound to `<leader>jp` by default) also fires a `User JjournalPinned` autocmd and calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`. `:redrawstatus` is enough for a statusline that reads these variables fresh on every redraw; but a framework that caches its own rendered output and only recomputes on specific autocmd events (Heirline, see below) needs `User JjournalPinned` added to that event list, or it won't notice the change until some unrelated event happens to fire.
 
 No UI ships with jjournal itself — wire these into whatever statusline you already use. For example, with [AstroNvim](https://astronvim.com), which uses [Heirline.nvim](https://github.com/rebelot/heirline.nvim) via `astroui.status`:
 
@@ -53,7 +53,12 @@ return {
           return status.utils.stylize(text, { padding = { left = 1, right = 1 } })
         end,
       },
-      update = { "BufEnter", "TextChanged", "TextChangedI", { "User", pattern = "JjournalPinned" } },
+      -- Heirline's own native `update` field only accepts a flat list of
+      -- event-name strings (plus one `pattern` shared across all of
+      -- them), so it can't express "the stock events, AND a User event
+      -- with its own pattern" -- that combination has to go through
+      -- astroui's `init.update_events` helper via `init` instead.
+      init = require("astroui.status").init.update_events({ "BufEnter", "TextChanged", "TextChangedI", { "User", pattern = "JjournalPinned" } }),
       surround = { separator = "left" },
     }))
   end,
