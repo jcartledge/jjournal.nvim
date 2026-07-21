@@ -31,7 +31,7 @@ Every buffer jjournal manages is tagged with buffer-local variables, so any stat
 
 - `vim.b.jjournal_entry` (boolean) — `true` if jjournal manages this buffer.
 - `vim.b.jjournal_date` (string) — the entry's `YYYY-MM-DD` date.
-- `vim.b.jjournal_pinned` (boolean) — `true` if the buffer is protected from auto-cleanup (edited, or explicitly pinned via `<leader>jp`); unset otherwise. The default (unpinned, ephemeral) state needs no indication — only the pinned exception is usually worth surfacing.
+- `vim.b.jjournal_pinned` (boolean) — `true` if the buffer is protected from auto-cleanup (edited, or explicitly pinned via `<leader>jp`); unset otherwise. Since editing already pins a buffer permanently, pinned is where most buffers you actually engage with end up — the recipes below surface the *unpinned* state instead (a 👁 "just peeking, will vanish if left untouched" marker), since that's the less common, more actionable one to flag.
 
 `jjournal.pin_buffer()` (bound to `<leader>jp` by default) also fires a `User JjournalPinned` autocmd and calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`. `:redrawstatus` is enough on its own for any statusline that reads these variables fresh on every redraw (which is the common case — see the Heirline recipe below, which needs nothing extra). `User JjournalPinned` exists for the less common case: a framework that caches its own rendered output and only refreshes on specific events it already knows about (lualine does this) needs an explicit hook into that event to notice the change, since pinning isn't one of the events it was built to expect.
 
@@ -49,7 +49,7 @@ return {
         condition = function() return vim.b[0].jjournal_entry end,
         provider = function()
           local text = vim.b[0].jjournal_date or ""
-          if vim.b[0].jjournal_pinned then text = text .. " 📌" end
+          if not vim.b[0].jjournal_pinned then text = text .. " 👁" end
           return status.utils.stylize(text, { padding = { left = 1, right = 1 } })
         end,
       },
@@ -63,7 +63,7 @@ This component has no `update` field, so Heirline never caches its rendered text
 
 ### Tabline / bufferline
 
-To show which buffers are pinned across every open buffer at once (useful once you have several journal entries open in different splits, where a shared statusline can only describe the current one), add the same marker to your tabline. AstroNvim's default tabline (`astronvim/plugins/heirline.lua`) already renders one entry per open buffer via:
+To show which open buffers are still just a peek (unpinned, will vanish if left untouched) across every open buffer at once (useful once you have several journal entries open in different splits, where a shared statusline can only describe the current one), add the same marker to your tabline. AstroNvim's default tabline (`astronvim/plugins/heirline.lua`) already renders one entry per open buffer via:
 
 ```lua
 status.heirline.make_buflist(status.component.tabline_file_info())
@@ -85,8 +85,8 @@ return {
       [9] = {
         -- self.bufnr, not vim.b[0]: each buffer in the tabline renders
         -- once per open buffer, most of which aren't the current one.
-        condition = function(self) return vim.b[self.bufnr].jjournal_pinned end,
-        provider = " 📌",
+        condition = function(self) return not vim.b[self.bufnr].jjournal_pinned end,
+        provider = " 👁",
       },
     }))
   end,

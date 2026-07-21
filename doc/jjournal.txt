@@ -187,7 +187,12 @@ jjournal's Lua API at all:
     vim.b.jjournal_date     (string) the entry's `YYYY-MM-DD` date.
     vim.b.jjournal_pinned   (boolean) `true` if the buffer is protected
                             from auto-cleanup (see |jjournal-mappings|);
-                            unset otherwise.
+                            unset otherwise. Since editing already pins
+                            a buffer permanently, pinned is where most
+                            engaged-with buffers end up -- the README's
+                            recipes surface the *unpinned* state instead
+                            (a peek/preview marker), since that's the
+                            less common, more actionable one to flag.
 
 |jjournal.pin_buffer()| also fires a `User JjournalPinned` autocmd and
 calls `:redrawstatus` immediately after setting `vim.b.jjournal_pinned`.
